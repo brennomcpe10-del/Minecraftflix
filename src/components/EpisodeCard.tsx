@@ -114,7 +114,7 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
       </div>
 
       {/* Details Area */}
-      <div className="p-4 flex-1 flex flex-col justify-between">
+      <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between">
         <div>
           {/* Episode Number and Resolution */}
           <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -136,27 +136,27 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
           {/* Episode Title */}
           <h3
             onClick={() => onPlay(series, episode)}
-            className="text-sm font-semibold text-white/90 group-hover:text-blue-400 transition-colors cursor-pointer line-clamp-1 mb-1.5"
+            className="text-sm sm:text-base font-bold text-white/90 group-hover:text-blue-400 transition-colors cursor-pointer line-clamp-1 mb-1.5"
             title={episode.title}
           >
             {episode.title}
           </h3>
 
           {/* Episode Synopsis */}
-          <p className="text-xs text-white/50 line-clamp-2 leading-relaxed mb-4">
+          <p className="text-xs text-white/50 line-clamp-2 leading-relaxed mb-3 sm:mb-4">
             {episode.description || 'Nenhuma descrição fornecida para este episódio.'}
           </p>
         </div>
 
         {/* Action Controls Footer */}
-        <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+        <div className="pt-2.5 sm:pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
           {/* Watched toggle */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onToggleWatched(episode.id);
             }}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-medium transition-all active:scale-95 min-h-[36px] ${
               isWatched
                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
                 : 'bg-white/5 text-white/60 border border-white/5 hover:text-white hover:bg-white/10'
@@ -169,10 +169,10 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
           </button>
 
           {/* Play & Download Actions */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleDownloadClick}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-blue-400 border border-white/5 transition-colors"
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-blue-400 border border-white/5 transition-all active:scale-95 min-h-[36px] min-w-[36px] flex items-center justify-center"
               title="Baixar arquivo de vídeo original"
               id={`download-ep-${episode.id}`}
             >
@@ -181,23 +181,23 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
 
             <button
               onClick={() => onPlay(series, episode)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all active:scale-95 min-h-[36px]"
               id={`play-ep-${episode.id}`}
             >
-              <Play className="w-3 h-3 fill-current" />
+              <Play className="w-3.5 h-3.5 fill-current" />
               <span>Assistir</span>
             </button>
 
             {/* Admin Controls */}
             {isAdmin && (
-              <div className="flex items-center gap-1 border-l border-white/5 pl-1.5 ml-0.5">
+              <div className="flex items-center gap-1 border-l border-white/10 pl-1.5 ml-0.5">
                 {onEditEpisode && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditEpisode(episode);
                     }}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-amber-400 border border-white/5 transition-colors"
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-amber-400 border border-white/5 transition-all active:scale-95 min-h-[36px] min-w-[36px] flex items-center justify-center"
                     title="Editar Episódio"
                   >
                     <Edit className="w-3.5 h-3.5" />
@@ -211,7 +211,7 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
                         onDeleteEpisode(episode.id);
                       }
                     }}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-rose-400 border border-white/5 transition-colors"
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-rose-400 border border-white/5 transition-all active:scale-95 min-h-[36px] min-w-[36px] flex items-center justify-center"
                     title="Excluir Episódio"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

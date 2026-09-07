@@ -375,7 +375,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8">
         {/* Loading & Error States */}
         {loading && (
           <div className="py-24 flex flex-col items-center justify-center text-white/40">
@@ -385,7 +385,7 @@ export default function App() {
         )}
 
         {error && !loading && (
-          <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-center my-8 max-w-md mx-auto">
+          <div className="p-5 sm:p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-center my-8 max-w-md mx-auto">
             <AlertCircle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
             <h3 className="font-bold text-base mb-1">Aviso de Conexão</h3>
             <p className="text-xs text-rose-300/80 mb-4">{error}</p>
@@ -402,7 +402,7 @@ export default function App() {
           <>
             {/* VIEW 1: INÍCIO (HOME) */}
             {activeView === 'home' && (
-              <div className="space-y-10">
+              <div className="space-y-6 sm:space-y-10">
                 {/* Hero Banner do Destaque */}
                 {featuredSeries && (
                   <HeroBanner
@@ -415,9 +415,9 @@ export default function App() {
                 {/* Continuar Assistindo Shelf (se houver histórico) */}
                 {recentlyWatchedEpisodes.length > 0 && (
                   <section>
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                        <Clock className="w-5 h-5 text-blue-400" />
+                    <div className="flex items-center justify-between mb-3 sm:mb-4">
+                      <h2 className="text-base sm:text-xl font-bold text-white flex items-center gap-2">
+                        <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
                         <span>Continuar Assistindo</span>
                       </h2>
                       <button
@@ -428,7 +428,7 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                       {recentlyWatchedEpisodes.slice(0, 3).map(({ series, episode }) => (
                         <EpisodeCard
                           key={episode.id}
@@ -445,10 +445,10 @@ export default function App() {
 
                 {/* Catálogo de Séries e Animes */}
                 <section>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-4 sm:mb-6">
                     <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
-                        <Film className="w-5 h-5 text-blue-400" />
+                      <h2 className="text-base sm:text-xl font-bold text-white flex items-center gap-2">
+                        <Film className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
                         <span>Catálogo Disponível</span>
                       </h2>
                       <p className="text-xs text-white/50 mt-0.5">
@@ -463,7 +463,7 @@ export default function App() {
                           setEditingSeries(null);
                           setShowSeriesFormModal(true);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all w-full sm:w-auto"
                         id="home-new-series-btn"
                       >
                         <Plus className="w-4 h-4" />
@@ -473,7 +473,7 @@ export default function App() {
                   </div>
 
                   {/* Grid de Séries */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
                     {seriesList.map((series) => (
                       <SeriesCard
                         key={series.id}
@@ -496,10 +496,10 @@ export default function App() {
 
             {/* VIEW 2: TODAS AS SÉRIES */}
             {activeView === 'all-series' && (
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+              <div className="space-y-4 sm:space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-white/10 pb-4 sm:pb-5">
                   <div>
-                    <h1 className="text-2xl font-bold text-white">Todas as Séries & Animes</h1>
+                    <h1 className="text-xl sm:text-2xl font-bold text-white">Todas as Séries & Animes</h1>
                     <p className="text-xs text-white/50 mt-1">
                       Explore as temporadas, filtre por gênero e pesquise por títulos ou episódios
                     </p>
@@ -511,7 +511,7 @@ export default function App() {
                         setEditingSeries(null);
                         setShowSeriesFormModal(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all self-start sm:self-auto"
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition-all w-full sm:w-auto"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Adicionar Série</span>
@@ -520,12 +520,12 @@ export default function App() {
                 </div>
 
                 {/* Genre Filter Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-2 scrollbar-none">
                   {allGenres.map((g) => (
                     <button
                       key={g}
                       onClick={() => setSelectedGenre(g)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                         selectedGenre === g
                           ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                           : 'bg-[#0F0F11] text-white/50 border border-white/5 hover:text-white hover:bg-white/5'
@@ -545,7 +545,7 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
                     {filteredSeriesList.map((series) => (
                       <SeriesCard
                         key={series.id}
@@ -568,43 +568,43 @@ export default function App() {
 
             {/* VIEW 3: MEU PROGRESSO (WATCHING) */}
             {activeView === 'watching' && (
-              <div className="space-y-6">
-                <div className="border-b border-white/10 pb-5">
-                  <h1 className="text-2xl font-bold text-white">Meu Progresso</h1>
+              <div className="space-y-4 sm:space-y-6">
+                <div className="border-b border-white/10 pb-4 sm:pb-5">
+                  <h1 className="text-xl sm:text-2xl font-bold text-white">Meu Progresso</h1>
                   <p className="text-xs text-white/50 mt-1">
                     Acompanhe os episódios marcados como assistidos e retome de onde parou
                   </p>
                 </div>
 
                 {/* Overview Metrics Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  <div className="p-5 rounded-2xl bg-[#0F0F11] border border-white/10">
-                    <div className="flex items-center gap-2 text-emerald-400 mb-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Episódios Assistidos</span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
+                  <div className="p-3.5 sm:p-5 rounded-2xl bg-[#0F0F11] border border-white/10">
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-emerald-400 mb-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="text-[11px] sm:text-xs font-semibold">Episódios Assistidos</span>
                     </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-white">
+                    <div className="text-xl sm:text-3xl font-bold text-white">
                       {totalWatchedCount}{' '}
                       <span className="text-xs text-white/40 font-normal">/ {totalEpisodesCount}</span>
                     </div>
                   </div>
 
-                  <div className="p-5 rounded-2xl bg-[#0F0F11] border border-white/10">
-                    <div className="flex items-center gap-2 text-blue-400 mb-1.5">
-                      <Tv className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Total de Séries</span>
+                  <div className="p-3.5 sm:p-5 rounded-2xl bg-[#0F0F11] border border-white/10">
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-blue-400 mb-1">
+                      <Tv className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="text-[11px] sm:text-xs font-semibold">Total de Séries</span>
                     </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-white">
+                    <div className="text-xl sm:text-3xl font-bold text-white">
                       {seriesList.length}
                     </div>
                   </div>
 
-                  <div className="p-5 rounded-2xl bg-[#0F0F11] border border-white/10 col-span-2 sm:col-span-1">
-                    <div className="flex items-center gap-2 text-amber-400 mb-1.5">
-                      <Clock className="w-4 h-4" />
-                      <span className="text-xs font-semibold">Taxa de Conclusão</span>
+                  <div className="p-3.5 sm:p-5 rounded-2xl bg-[#0F0F11] border border-white/10 col-span-2 sm:col-span-1">
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-amber-400 mb-1">
+                      <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="text-[11px] sm:text-xs font-semibold">Taxa de Conclusão</span>
                     </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-white">
+                    <div className="text-xl sm:text-3xl font-bold text-white">
                       {totalEpisodesCount > 0
                         ? `${Math.round((totalWatchedCount / totalEpisodesCount) * 100)}%`
                         : '0%'}
@@ -614,9 +614,9 @@ export default function App() {
 
                 {/* List of episodes with progress */}
                 {recentlyWatchedEpisodes.length === 0 ? (
-                  <div className="py-20 text-center text-white/40 bg-[#0F0F11] rounded-3xl border border-white/10 p-8">
+                  <div className="py-16 sm:py-20 text-center text-white/40 bg-[#0F0F11] rounded-2xl sm:rounded-3xl border border-white/10 p-6 sm:p-8">
                     <CheckCircle2 className="w-10 h-10 text-white/20 mx-auto mb-3" />
-                    <p className="text-base font-semibold text-white/70 mb-1">
+                    <p className="text-sm sm:text-base font-semibold text-white/70 mb-1">
                       Você ainda não marcou nenhum episódio como assistido.
                     </p>
                     <p className="text-xs text-white/40 max-w-sm mx-auto mb-4">
@@ -624,17 +624,17 @@ export default function App() {
                     </p>
                     <button
                       onClick={() => setActiveView('home')}
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-blue-600/20"
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-blue-600/20 min-h-[44px]"
                     >
                       Explorar Catálogo
                     </button>
                   </div>
                 ) : (
                   <div>
-                    <h2 className="text-base font-bold text-white mb-4">
+                    <h2 className="text-sm sm:text-base font-bold text-white mb-3 sm:mb-4">
                       Histórico e Episódios Salvos ({recentlyWatchedEpisodes.length})
                     </h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
                       {recentlyWatchedEpisodes.map(({ series, episode }) => (
                         <EpisodeCard
                           key={episode.id}

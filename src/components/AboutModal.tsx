@@ -18,22 +18,22 @@ interface AboutModalProps {
 
 export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
-      <div className="relative w-full max-w-3xl rounded-3xl bg-[#0F0F11] border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 animate-fadeIn">
+      <div className="relative w-full max-w-3xl rounded-2xl sm:rounded-3xl bg-[#0F0F11] border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[92vh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-[#171719]/50">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center shadow-lg">
-              <Film className="w-6 h-6 text-blue-400" />
+        <div className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-[#171719]/50">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center shadow-lg flex-shrink-0">
+              <Film className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-xl font-bold text-white flex items-center gap-1.5 sm:gap-2 truncate">
                 <span>Portal de Episódios</span>
-                <span className="text-xs bg-blue-600/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold">
+                <span className="text-[10px] sm:text-xs bg-blue-600/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
                   Streaming Hub
                 </span>
               </h2>
-              <p className="text-xs text-white/50 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-white/50 mt-0.5 truncate">
                 Plataforma moderna inspirada nos principais serviços de streaming
               </p>
             </div>
@@ -41,14 +41,14 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10 flex items-center justify-center flex-shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6 text-sm text-white/70">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 text-sm text-white/70">
           <div className="p-4 rounded-2xl bg-[#171719] border border-white/5">
             <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-400" />
@@ -147,7 +147,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ onClose }) => {
         <div className="p-4 border-t border-white/10 flex items-center justify-end bg-[#0F0F11]">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20 min-h-[44px] flex items-center justify-center"
           >
             Entendido
           </button>

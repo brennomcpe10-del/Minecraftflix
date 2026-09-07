@@ -231,19 +231,19 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
-      <div className="relative w-full max-w-2xl rounded-3xl bg-[#0F0F11] border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[95vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 animate-fadeIn">
+      <div className="relative w-full max-w-2xl rounded-2xl sm:rounded-3xl bg-[#0F0F11] border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[92vh] sm:max-h-[95vh] flex flex-col">
         {/* Modal Header */}
-        <div className="p-5 border-b border-white/10 flex items-center justify-between bg-[#171719]/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-400 flex items-center justify-center border border-blue-500/20">
-              <Film className="w-5 h-5" />
+        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-[#171719]/50">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-600/10 text-blue-400 flex items-center justify-center border border-blue-500/20 flex-shrink-0">
+              <Film className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold text-white truncate">
                 {isEditing ? 'Editar Episódio' : 'Publicar Novo Episódio'}
               </h2>
-              <p className="text-xs text-white/50">
+              <p className="text-[11px] sm:text-xs text-white/50 truncate">
                 Série: <span className="text-white/80 font-medium">{series.title}</span>
               </p>
             </div>
@@ -251,15 +251,15 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10 flex items-center justify-center flex-shrink-0"
             id="add-episode-close-btn"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
         {/* Modal Body Form */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto flex-1 space-y-5">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
           {errorMessage && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -272,28 +272,28 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
             <label className="block text-xs font-semibold text-white/70 mb-2">
               1. Fonte do Vídeo
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               {/* Opção Google Drive */}
               <button
                 type="button"
                 onClick={() => setSourceType('google_drive')}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                className={`flex flex-col items-center justify-center p-2 sm:p-3 rounded-xl border text-center transition-all ${
                   sourceType === 'google_drive'
                     ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 shadow-md shadow-amber-500/5'
                     : 'bg-[#171719] border-white/5 text-white/50 hover:bg-white/5 hover:text-white'
                 }`}
                 id="source-google-drive-tab"
               >
-                <HardDrive className="w-5 h-5 mb-1 text-amber-400" />
-                <span className="text-xs font-bold">Google Drive</span>
-                <span className="text-[10px] text-white/40">Link direto HD</span>
+                <HardDrive className="w-4 h-4 sm:w-5 sm:h-5 mb-1 text-amber-400" />
+                <span className="text-[11px] sm:text-xs font-bold leading-tight">Google Drive</span>
+                <span className="text-[9px] sm:text-[10px] text-white/40 hidden sm:block">Link direto HD</span>
               </button>
 
               {/* Opção Upload Direto */}
               <button
                 type="button"
                 onClick={() => setSourceType('direct_upload')}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                className={`flex flex-col items-center justify-center p-2 sm:p-3 rounded-xl border text-center transition-all ${
                   sourceType === 'direct_upload'
                     ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-md shadow-cyan-500/5'
                     : 'bg-[#171719] border-white/5 text-white/50 hover:bg-white/5 hover:text-white'
@@ -570,11 +570,11 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
           </div>
 
           {/* Modal Footer Actions */}
-          <div className="pt-4 border-t border-white/10 flex items-center justify-end gap-3">
+          <div className="pt-3 sm:pt-4 border-t border-white/10 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-xs font-semibold border border-white/5 transition-colors"
+              className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-xs font-semibold border border-white/5 transition-colors text-center min-h-[44px] flex items-center justify-center"
             >
               Cancelar
             </button>
@@ -582,7 +582,7 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || isUploading}
-              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
               id="submit-episode-btn"
             >
               {(isSubmitting || isUploading) && <Sparkles className="w-3.5 h-3.5 animate-spin" />}

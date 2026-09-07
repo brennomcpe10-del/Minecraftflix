@@ -71,8 +71,8 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
           </span>
         </div>
 
-        {/* Hover Quick Play Button */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+        {/* Hover / Touch Quick Play Button */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 sm:opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
           <button
             onClick={handleQuickPlay}
             className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md hover:bg-blue-600 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 active:scale-95 transition-all"
@@ -80,6 +80,11 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
           >
             <Play className="w-5 h-5 fill-current translate-x-0.5" />
           </button>
+        </div>
+
+        {/* Mobile Quick Play Indicator */}
+        <div className="sm:hidden absolute bottom-2.5 right-2.5 w-8 h-8 rounded-full bg-blue-600/90 text-white flex items-center justify-center shadow-md">
+          <Play className="w-3.5 h-3.5 fill-current translate-x-0.5" />
         </div>
 
         {/* Watch Progress Bar on image bottom */}
@@ -94,9 +99,9 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
       </div>
 
       {/* Info Area */}
-      <div className="p-4 flex-1 flex flex-col justify-between">
+      <div className="p-3.5 sm:p-4 flex-1 flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between gap-2 text-xs text-white/40 mb-1">
+          <div className="flex items-center justify-between gap-2 text-[11px] sm:text-xs text-white/40 mb-1">
             <span>{series.releaseYear}</span>
             <div className="flex items-center gap-1">
               <Layers className="w-3.5 h-3.5 text-blue-400" />
@@ -128,19 +133,19 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
 
           {/* Progress and Action Footer */}
           <div className="pt-2.5 border-t border-white/5 flex items-center justify-between gap-2 text-xs">
-            <span className="text-[11px] text-white/40">
+            <span className="text-[11px] text-white/40 truncate">
               {watchedCount > 0
                 ? `${watchedCount}/${totalEpisodes} assistidos (${progressPercent}%)`
                 : `${totalEpisodes} episódios`}
             </span>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenDetails(series);
                 }}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5 transition-colors"
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/5 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center active:scale-95"
                 title="Ver Episódios"
               >
                 <ListVideo className="w-4 h-4 text-blue-400" />
@@ -154,7 +159,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
                         e.stopPropagation();
                         onEditSeries(series);
                       }}
-                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-amber-400 border border-white/5 transition-colors"
+                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-amber-400 border border-white/5 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center active:scale-95"
                       title="Editar Série"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -168,7 +173,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
                           onDeleteSeries(series.id);
                         }
                       }}
-                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-rose-400 border border-white/5 transition-colors"
+                      className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-rose-400 border border-white/5 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center active:scale-95"
                       title="Excluir Série"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
