@@ -71,7 +71,7 @@ export const AddEpisodeModal: React.FC<AddEpisodeModalProps> = ({
 
   // Calcular próximo número de episódio automaticamente
   const getNextEpisodeNumber = (season: number) => {
-    const seasonEps = series.episodes.filter((e) => e.seasonNumber === season);
+    const seasonEps = (series.episodes || []).filter((e) => e.seasonNumber === season);
     return seasonEps.length > 0 ? Math.max(...seasonEps.map((e) => e.episodeNumber)) + 1 : 1;
   };
 

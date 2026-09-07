@@ -47,7 +47,8 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
   // Calcular temporadas existentes
   const seasonsList = useMemo(() => {
     const seasons = new Set<number>();
-    series.episodes.forEach((ep) => seasons.add(ep.seasonNumber));
+    const eps = series.episodes || [];
+    eps.forEach((ep) => seasons.add(ep.seasonNumber));
     if (seasons.size === 0) {
       seasons.add(1);
     }
@@ -55,13 +56,13 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
   }, [series.episodes]);
 
   // Contagem de assistidos
-  const totalEpisodes = series.episodes.length;
-  const watchedCount = series.episodes.filter((e) => isEpisodeWatched(e.id)).length;
+  const totalEpisodes = (series.episodes || []).length;
+  const watchedCount = (series.episodes || []).filter((e) => isEpisodeWatched(e.id)).length;
   const progressPercent = totalEpisodes > 0 ? Math.round((watchedCount / totalEpisodes) * 100) : 0;
 
   // Filtragem de episódios
   const filteredEpisodes = useMemo(() => {
-    return series.episodes.filter((ep) => {
+    return (series.episodes || []).filter((ep) => {
       // Filtro de temporada
       if (selectedSeason !== 'all' && ep.seasonNumber !== selectedSeason) {
         return false;
@@ -90,11 +91,12 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
   }, [series.episodes, selectedSeason, watchedFilter, searchQuery, isEpisodeWatched]);
 
   const handlePlayFirstUnwatched = () => {
-    const unwatched = series.episodes.find((e) => !isEpisodeWatched(e.id));
+    const eps = series.episodes || [];
+    const unwatched = eps.find((e) => !isEpisodeWatched(e.id));
     if (unwatched) {
       onPlayEpisode(series, unwatched);
-    } else if (series.episodes.length > 0) {
-      onPlayEpisode(series, series.episodes[0]);
+    } else if (eps.length > 0) {
+      onPlayEpisode(series, eps[0]);
     }
   };
 
@@ -152,7 +154,7 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
 
             {/* Quick Play CTA */}
             <div className="flex items-center gap-2">
-              {series.episodes.length > 0 && (
+              {(series.episodes || []).length > 0 && (
                 <button
                   onClick={handlePlayFirstUnwatched}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black hover:bg-blue-400 font-bold text-sm shadow-lg transition-colors hover:scale-105"
@@ -220,7 +222,7 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
           </div>
 
           <div className="flex flex-wrap gap-1.5 mt-3">
-            {series.genres.map((g) => (
+            {(series.genres || []).map((g) => (
               <span
                 key={g}
                 className="text-[11px] text-white/60 bg-white/5 px-2.5 py-0.5 rounded-md border border-white/5"
@@ -248,7 +250,7 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
             </button>
 
             {seasonsList.map((seasonNum) => {
-              const count = series.episodes.filter((e) => e.seasonNumber === seasonNum).length;
+              const count = (series.episodes || []).filter((e) => e.seasonNumber === seasonNum).length;
               return (
                 <button
                   key={seasonNum}

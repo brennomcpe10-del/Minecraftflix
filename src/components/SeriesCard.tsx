@@ -21,7 +21,9 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
   onEditSeries,
   onDeleteSeries,
 }) => {
-  const totalEpisodes = series.episodes.length;
+  const episodes = series.episodes || [];
+  const genres = series.genres || [];
+  const totalEpisodes = episodes.length;
   const progressPercent = totalEpisodes > 0 ? Math.round((watchedCount / totalEpisodes) * 100) : 0;
 
   // Encontrar o primeiro episódio não assistido ou o primeiro episódio
@@ -32,7 +34,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
       return;
     }
     // Procurar primeiro episódio
-    const epToPlay = series.episodes[0];
+    const epToPlay = episodes[0];
     onPlayEpisode(series, epToPlay);
   };
 
@@ -114,7 +116,7 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
         <div>
           {/* Genre pills */}
           <div className="flex flex-wrap gap-1 mb-3">
-            {series.genres.slice(0, 3).map((g) => (
+            {genres.slice(0, 3).map((g) => (
               <span
                 key={g}
                 className="text-[10px] text-white/50 bg-white/5 border border-white/5 px-2 py-0.5 rounded"

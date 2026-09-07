@@ -73,9 +73,10 @@ export default function App() {
       setLoading(true);
       setError(null);
       const data = await api.getSeries();
-      setSeriesList(data);
+      setSeriesList(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.warn('Carregamento inicial usando fallback:', err);
+      setSeriesList([]);
     } finally {
       setLoading(false);
     }
@@ -87,10 +88,11 @@ export default function App() {
 
     // Assinar atualizações em tempo real do Firestore para sincronização entre dispositivos
     const unsubscribe = api.subscribeSeries((updatedList) => {
-      setSeriesList(updatedList);
+      const safeList = Array.isArray(updatedList) ? updatedList : [];
+      setSeriesList(safeList);
       setSelectedSeriesForDetail((prev) => {
         if (!prev) return null;
-        const fresh = updatedList.find((s) => s.id === prev.id);
+        const fresh = safeList.find((s) => s && s.id === prev.id);
         return fresh || prev;
       });
     });
@@ -134,7 +136,7 @@ export default function App() {
     // Achar a série correspondente
     let targetSeriesId = '';
     for (const s of seriesList) {
-      if (s.episodes.some((e) => e.id === episodeId)) {
+      if ((s.episodes || []).some((e) => e.id === episodeId)) {
         targetSeriesId = s.id;
         break;
       }
@@ -147,7 +149,7 @@ export default function App() {
   const getWatchedCountForSeries = useCallback(
     (series: Series) => {
       void watchedRevision;
-      return series.episodes.filter((e) => api.isEpisodeWatched(e.id)).length;
+      return (series.episodes || []).filter((e) => api.isEpisodeWatched(e.id)).length;
     },
     [watchedRevision]
   );
@@ -160,7 +162,7 @@ export default function App() {
   // Todos os gêneros disponíveis
   const allGenres = useMemo(() => {
     const set = new Set<string>();
-    seriesList.forEach((s) => s.genres.forEach((g) => set.add(g)));
+    (seriesList || []).forEach((s) => (s?.genres || []).forEach((g) => set.add(g)));
     return ['Todos', ...Array.from(set)];
   }, [seriesList]);
 
@@ -170,8 +172,8 @@ export default function App() {
     const progressMap = api.getProgressMap();
     const list: { series: Series; episode: Episode; lastWatchedAt: string }[] = [];
 
-    seriesList.forEach((s) => {
-      s.episodes.forEach((ep) => {
+    (seriesList || []).forEach((s) => {
+      (s?.episodes || []).forEach((ep) => {
         const prog = progressMap[ep.id];
         if (prog) {
           list.push({
@@ -191,7 +193,7 @@ export default function App() {
   // Filtragem de séries para a aba "Todas as Séries"
   const filteredSeriesList = useMemo(() => {
     return seriesList.filter((s) => {
-      if (selectedGenre !== 'Todos' && !s.genres.includes(selectedGenre)) {
+      if (selectedGenre !== 'Todos' && !(s.genres || []).includes(selectedGenre)) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -199,8 +201,8 @@ export default function App() {
         const matchTitle = s.title.toLowerCase().includes(q);
         const matchOriginal = s.originalTitle?.toLowerCase().includes(q) || false;
         const matchSynopsis = s.synopsis.toLowerCase().includes(q);
-        const matchGenre = s.genres.some((g) => g.toLowerCase().includes(q));
-        const matchEp = s.episodes.some(
+        const matchGenre = (s.genres || []).some((g) => g.toLowerCase().includes(q));
+        const matchEp = (s.episodes || []).some(
           (e) =>
             e.title.toLowerCase().includes(q) ||
             `t${e.seasonNumber} e${e.episodeNumber}`.toLowerCase().includes(q)
@@ -256,18 +258,19 @@ export default function App() {
     setSeriesList((prev) => {
       return prev.map((s) => {
         if (s.id !== savedEpisode.seriesId) return s;
-        const epIndex = s.episodes.findIndex((e) => e.id === savedEpisode.id);
+        const currentEps = s.episodes || [];
+        const epIndex = currentEps.findIndex((e) => e.id === savedEpisode.id);
         let nextEpisodes: Episode[];
         if (epIndex >= 0) {
-          nextEpisodes = [...s.episodes];
+          nextEpisodes = [...currentEps];
           nextEpisodes[epIndex] = savedEpisode;
         } else {
-          nextEpisodes = [...s.episodes, savedEpisode];
+          nextEpisodes = [...currentEps, savedEpisode];
         }
         return {
           ...s,
           episodes: nextEpisodes,
-          totalSeasons: Math.max(s.totalSeasons, savedEpisode.seasonNumber),
+          totalSeasons: Math.max(s.totalSeasons || 1, savedEpisode.seasonNumber),
         };
       });
     });
@@ -276,15 +279,16 @@ export default function App() {
     if (selectedSeriesForDetail && selectedSeriesForDetail.id === savedEpisode.seriesId) {
       setSelectedSeriesForDetail((prev) => {
         if (!prev) return null;
-        const epIndex = prev.episodes.findIndex((e) => e.id === savedEpisode.id);
+        const currentEps = prev.episodes || [];
+        const epIndex = currentEps.findIndex((e) => e.id === savedEpisode.id);
         const nextEpisodes =
           epIndex >= 0
-            ? prev.episodes.map((e) => (e.id === savedEpisode.id ? savedEpisode : e))
-            : [...prev.episodes, savedEpisode];
+            ? currentEps.map((e) => (e.id === savedEpisode.id ? savedEpisode : e))
+            : [...currentEps, savedEpisode];
         return {
           ...prev,
           episodes: nextEpisodes,
-          totalSeasons: Math.max(prev.totalSeasons, savedEpisode.seasonNumber),
+          totalSeasons: Math.max(prev.totalSeasons || 1, savedEpisode.seasonNumber),
         };
       });
     }
@@ -304,7 +308,7 @@ export default function App() {
         if (!prev) return null;
         return {
           ...prev,
-          episodes: prev.episodes.filter((e) => e.id !== episodeId),
+          episodes: (prev.episodes || []).filter((e) => e.id !== episodeId),
         };
       });
       setSeriesList((prev) => {
@@ -312,7 +316,7 @@ export default function App() {
           if (s.id !== selectedSeriesForDetail.id) return s;
           return {
             ...s,
-            episodes: s.episodes.filter((e) => e.id !== episodeId),
+            episodes: (s.episodes || []).filter((e) => e.id !== episodeId),
           };
         });
       });
@@ -343,12 +347,12 @@ export default function App() {
   const totalWatchedCount = useMemo(() => {
     void watchedRevision;
     return seriesList.reduce((acc, s) => {
-      return acc + s.episodes.filter((e) => api.isEpisodeWatched(e.id)).length;
+      return acc + (s.episodes || []).filter((e) => api.isEpisodeWatched(e.id)).length;
     }, 0);
   }, [seriesList, watchedRevision]);
 
   const totalEpisodesCount = useMemo(() => {
-    return seriesList.reduce((acc, s) => acc + s.episodes.length, 0);
+    return seriesList.reduce((acc, s) => acc + (s.episodes || []).length, 0);
   }, [seriesList]);
 
   return (

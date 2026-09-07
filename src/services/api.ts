@@ -62,6 +62,59 @@ function markAsDeletedLocally(id: string): void {
 }
 
 /**
+ * Garante que todo objeto Series retornado ou processado seja válido e possua arrays definidos
+ */
+export function normalizeSeries(item: any): Series {
+  if (!item || typeof item !== 'object') {
+    return {
+      id: `series-${Date.now()}`,
+      title: 'Sem Título',
+      originalTitle: '',
+      synopsis: '',
+      posterUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
+      bannerUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=80',
+      releaseYear: new Date().getFullYear(),
+      genres: ['Série'],
+      status: 'Em Lançamento',
+      totalSeasons: 1,
+      ageRating: '14+',
+      featured: false,
+      createdAt: new Date().toISOString(),
+      episodes: [],
+    };
+  }
+
+  return {
+    id: item.id || `series-${Date.now()}`,
+    title: item.title || 'Sem Título',
+    originalTitle: item.originalTitle || '',
+    synopsis: item.synopsis || '',
+    posterUrl: item.posterUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
+    bannerUrl: item.bannerUrl || 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=80',
+    releaseYear: Number(item.releaseYear) || new Date().getFullYear(),
+    genres: Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : ['Série'],
+    status: item.status || 'Em Lançamento',
+    totalSeasons: Number(item.totalSeasons) || 1,
+    ageRating: item.ageRating || '14+',
+    featured: Boolean(item.featured),
+    createdAt: item.createdAt || new Date().toISOString(),
+    episodes: Array.isArray(item.episodes)
+      ? item.episodes.map((ep: any) => ({
+          ...ep,
+          seasonNumber: Number(ep.seasonNumber) || 1,
+          episodeNumber: Number(ep.episodeNumber) || 1,
+          title: ep.title || `Episódio ${ep.episodeNumber || 1}`,
+          description: ep.description || '',
+          sourceType: ep.sourceType || 'web_url',
+          videoUrl: ep.videoUrl || '',
+          resolution: ep.resolution || '1080p HD',
+          durationMinutes: Number(ep.durationMinutes) || 24,
+        }))
+      : [],
+  };
+}
+
+/**
  * Utilitários de Persistência Local (Offline-First e Caching)
  */
 function getLocalSeries(): Series[] {
@@ -71,7 +124,7 @@ function getLocalSeries(): Series[] {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const deleted = getDeletedIds();
-        return parsed.filter((s) => !deleted.has(s.id));
+        return parsed.filter((s) => s && !deleted.has(s.id)).map(normalizeSeries);
       }
     }
   } catch (err) {
@@ -83,7 +136,7 @@ function getLocalSeries(): Series[] {
 function saveLocalSeries(series: Series[]): void {
   try {
     const deleted = getDeletedIds();
-    const filtered = series.filter((s) => !deleted.has(s.id));
+    const filtered = series.filter((s) => s && !deleted.has(s.id)).map(normalizeSeries);
     localStorage.setItem(SERIES_STORAGE_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Erro ao salvar séries no localStorage:', err);
@@ -106,9 +159,9 @@ export const api = {
           const deleted = getDeletedIds();
           const list: Series[] = [];
           snapshot.forEach((d) => {
-            const item = d.data() as Series;
-            if (!deleted.has(item.id)) {
-              list.push(item);
+            const rawItem = d.data();
+            if (rawItem && !deleted.has(rawItem.id || d.id)) {
+              list.push(normalizeSeries({ ...rawItem, id: rawItem.id || d.id }));
             }
           });
           saveLocalSeries(list);
@@ -135,9 +188,9 @@ export const api = {
 
       const list: Series[] = [];
       snapshot.forEach((d) => {
-        const item = d.data() as Series;
-        if (!deleted.has(item.id)) {
-          list.push(item);
+        const rawItem = d.data();
+        if (rawItem && !deleted.has(rawItem.id || d.id)) {
+          list.push(normalizeSeries({ ...rawItem, id: rawItem.id || d.id }));
         }
       });
 
@@ -154,7 +207,7 @@ export const api = {
       const docRef = doc(db, 'series', id);
       const snapshot = await getDoc(docRef);
       if (snapshot.exists()) {
-        return snapshot.data() as Series;
+        return normalizeSeries({ ...snapshot.data(), id: snapshot.id });
       }
     } catch (err) {
       console.warn('Erro ao buscar série no Firestore:', err);
@@ -162,7 +215,7 @@ export const api = {
 
     const localList = getLocalSeries();
     const found = localList.find((s) => s.id === id);
-    if (found) return found;
+    if (found) return normalizeSeries(found);
 
     throw new Error('Série não encontrada');
   },
@@ -185,7 +238,7 @@ export const api = {
       episodes: Array.isArray(data.episodes) ? data.episodes : [],
     };
 
-    const clean = sanitizeForFirestore(newSeries);
+    const clean = sanitizeForFirestore(normalizeSeries(newSeries));
 
     // 1. Salvar no Firestore (Nuvem compartilhada entre todos os aparelhos)
     try {
@@ -212,7 +265,7 @@ export const api = {
       ...data,
     };
 
-    const clean = sanitizeForFirestore(updated);
+    const clean = sanitizeForFirestore(normalizeSeries(updated));
 
     // 1. Atualizar no Firestore
     try {

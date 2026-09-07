@@ -13,7 +13,9 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   onPlayEpisode,
   onOpenDetails,
 }) => {
-  const firstEpisode = series.episodes[0];
+  const episodes = series.episodes || [];
+  const genres = series.genres || [];
+  const firstEpisode = episodes[0];
 
   return (
     <div className="relative w-full rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-r from-blue-950/40 via-[#0A0A0B] to-transparent shadow-2xl mb-10 group">
@@ -47,7 +49,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           </span>
 
           <span className="text-xs font-medium text-white/60 bg-white/5 border border-white/5 px-2 py-0.5 rounded">
-            {series.totalSeasons} {series.totalSeasons > 1 ? 'Temporadas' : 'Temporada'} • {series.episodes.length} Episódios
+            {series.totalSeasons || 1} {(series.totalSeasons || 1) > 1 ? 'Temporadas' : 'Temporada'} • {episodes.length} Episódios
           </span>
 
           <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${
@@ -73,7 +75,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
         {/* Genres */}
         <div className="flex flex-wrap gap-1.5 mb-4">
-          {series.genres.map((g) => (
+          {genres.map((g) => (
             <span
               key={g}
               className="text-[11px] text-white/70 bg-white/5 backdrop-blur-sm px-2.5 py-0.5 rounded-md border border-white/5"
@@ -107,7 +109,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             id="hero-details-btn"
           >
             <ListVideo className="w-5 h-5 text-blue-400" />
-            <span>Ver Temporadas ({series.episodes.length})</span>
+            <span>Ver Temporadas ({episodes.length})</span>
           </button>
         </div>
       </div>
