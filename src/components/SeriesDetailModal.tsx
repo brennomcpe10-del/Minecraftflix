@@ -101,8 +101,8 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md flex items-stretch sm:items-start justify-center p-0 sm:p-4 md:p-6 animate-fadeIn">
-      <div className="relative w-full max-w-5xl rounded-none sm:rounded-3xl bg-[#0F0F11] border-0 sm:border sm:border-white/10 shadow-2xl overflow-hidden min-h-screen sm:min-h-0 sm:my-auto sm:max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md flex items-start justify-center p-0 sm:p-4 md:p-6 animate-fadeIn" id="series-detail-modal-wrapper">
+      <div className="relative w-full max-w-5xl rounded-none sm:rounded-3xl bg-[#0F0F11] border-0 sm:border sm:border-white/10 shadow-2xl min-h-screen sm:min-h-0 sm:my-auto flex flex-col pb-36 sm:pb-8">
         {/* Header with Backdrop Banner */}
         <div className="relative w-full aspect-[16/9] sm:aspect-[24/8] min-h-[220px] sm:min-h-[260px] max-h-[340px] overflow-hidden flex-shrink-0">
           <img
@@ -314,7 +314,7 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
         </div>
 
         {/* Episodes Grid List */}
-        <div className="p-3 sm:p-8 overflow-y-auto flex-1">
+        <div className="p-3 sm:p-8 w-full">
           {filteredEpisodes.length === 0 ? (
             <div className="py-12 text-center text-white/40">
               <p className="text-base font-semibold mb-1 text-white/70">Nenhum episódio encontrado.</p>

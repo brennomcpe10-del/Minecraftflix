@@ -215,13 +215,20 @@ export default function App() {
 
   // Reproduzir episódio
   const handlePlayEpisode = (series: Series, episode: Episode) => {
+    setSelectedSeriesForDetail(null);
     setActivePlayingSeries(series);
     setActivePlayingEpisode(episode);
   };
 
   // Abrir detalhes da série
   const handleOpenDetails = (series: Series) => {
-    setSelectedSeriesForDetail(series);
+    const eps = series.episodes || [];
+    if (eps.length > 0) {
+      const firstUnwatched = eps.find((e) => !isEpisodeWatched(e.id)) || eps[0];
+      handlePlayEpisode(series, firstUnwatched);
+    } else {
+      setSelectedSeriesForDetail(series);
+    }
   };
 
   // Sucesso ao salvar série
@@ -293,6 +300,24 @@ export default function App() {
       });
     }
 
+    // Se o player completo estiver aberto nesta série, atualizar também
+    if (activePlayingSeries && activePlayingSeries.id === savedEpisode.seriesId) {
+      setActivePlayingSeries((prev) => {
+        if (!prev) return null;
+        const currentEps = prev.episodes || [];
+        const epIndex = currentEps.findIndex((e) => e.id === savedEpisode.id);
+        const nextEpisodes =
+          epIndex >= 0
+            ? currentEps.map((e) => (e.id === savedEpisode.id ? savedEpisode : e))
+            : [...currentEps, savedEpisode];
+        return {
+          ...prev,
+          episodes: nextEpisodes,
+          totalSeasons: Math.max(prev.totalSeasons || 1, savedEpisode.seasonNumber),
+        };
+      });
+    }
+
     // Se estiver reproduzindo este episódio, atualizar player
     if (activePlayingEpisode?.id === savedEpisode.id) {
       setActivePlayingEpisode(savedEpisode);
@@ -301,19 +326,41 @@ export default function App() {
 
   // Excluir episódio
   const handleDeleteEpisode = async (episodeId: string) => {
-    if (!selectedSeriesForDetail) return;
+    const targetSeriesId = selectedSeriesForDetail?.id || activePlayingSeries?.id;
+    if (!targetSeriesId) return;
     try {
-      await api.deleteEpisode(selectedSeriesForDetail.id, episodeId);
-      setSelectedSeriesForDetail((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          episodes: (prev.episodes || []).filter((e) => e.id !== episodeId),
-        };
-      });
+      await api.deleteEpisode(targetSeriesId, episodeId);
+      if (selectedSeriesForDetail) {
+        setSelectedSeriesForDetail((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            episodes: (prev.episodes || []).filter((e) => e.id !== episodeId),
+          };
+        });
+      }
+      if (activePlayingSeries) {
+        setActivePlayingSeries((prev) => {
+          if (!prev) return null;
+          const remaining = (prev.episodes || []).filter((e) => e.id !== episodeId);
+          return {
+            ...prev,
+            episodes: remaining,
+          };
+        });
+        if (activePlayingEpisode?.id === episodeId) {
+          const remaining = (activePlayingSeries.episodes || []).filter((e) => e.id !== episodeId);
+          if (remaining.length > 0) {
+            setActivePlayingEpisode(remaining[0]);
+          } else {
+            setActivePlayingEpisode(null);
+            setActivePlayingSeries(null);
+          }
+        }
+      }
       setSeriesList((prev) => {
         return prev.map((s) => {
-          if (s.id !== selectedSeriesForDetail.id) return s;
+          if (s.id !== targetSeriesId) return s;
           return {
             ...s,
             episodes: (s.episodes || []).filter((e) => e.id !== episodeId),
@@ -668,7 +715,7 @@ export default function App() {
 
       {/* --- MODAIS DO SISTEMA --- */}
 
-      {/* 1. Modal do Player de Vídeo Completo */}
+      {/* 1. Modal do Player de Vídeo Completo com Lista de Episódios e Detalhes */}
       {activePlayingSeries && activePlayingEpisode && (
         <VideoPlayerModal
           series={activePlayingSeries}
@@ -680,6 +727,25 @@ export default function App() {
           onSelectEpisode={(ep) => setActivePlayingEpisode(ep)}
           isWatched={isEpisodeWatched(activePlayingEpisode.id)}
           onToggleWatched={handleToggleWatched}
+          isEpisodeWatched={isEpisodeWatched}
+          allSeries={seriesList}
+          onSelectSeries={(s) => {
+            setActivePlayingSeries(s);
+            const eps = s.episodes || [];
+            if (eps.length > 0) {
+              const firstUnwatched = eps.find((e) => !isEpisodeWatched(e.id)) || eps[0];
+              setActivePlayingEpisode(firstUnwatched);
+            }
+          }}
+          isAdmin={isAdmin}
+          onOpenAddEpisodeModal={(s, seasonNum) => handleOpenAddEpisodeModal(s, seasonNum)}
+          onEditEpisode={handleOpenEditEpisodeModal}
+          onDeleteEpisode={handleDeleteEpisode}
+          onEditSeries={(s) => {
+            setEditingSeries(s);
+            setShowSeriesFormModal(true);
+          }}
+          onDeleteSeries={handleDeleteSeries}
         />
       )}
 
