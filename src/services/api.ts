@@ -1,72 +1,238 @@
 import { Series, Episode, WatchProgress } from '../types';
+import { INITIAL_SERIES } from '../data/defaultData';
 
+const SERIES_STORAGE_KEY = 'portal_series_data_v2';
 const PROGRESS_STORAGE_KEY = 'portal_watch_progress_v1';
 const ADMIN_TOKEN_KEY = 'portal_admin_authenticated';
+const ADMIN_PASSWORD_DEFAULT = 'admin123';
+
+/**
+ * Utilitários de Persistência Local (Offline-First e Fallback Imediato)
+ */
+function getLocalSeries(): Series[] {
+  try {
+    const raw = localStorage.getItem(SERIES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao ler séries do localStorage:', err);
+  }
+  // Se não existir ou estiver corrompido, inicializa com o catálogo padrão
+  saveLocalSeries(INITIAL_SERIES);
+  return INITIAL_SERIES;
+}
+
+function saveLocalSeries(series: Series[]): void {
+  try {
+    localStorage.setItem(SERIES_STORAGE_KEY, JSON.stringify(series));
+  } catch (err) {
+    console.warn('Erro ao salvar séries no localStorage:', err);
+  }
+}
+
+/**
+ * Tenta fazer uma requisição JSON segura para o servidor Express.
+ * Se o servidor estiver offline, retornar 404, retornar HTML ou falhar na rede,
+ * retorna null em vez de quebrar a aplicação.
+ */
+async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<T | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s timeout
+
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      // Recebeu HTML (típico de SPA redirect em servidor estático)
+      return null;
+    }
+
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export const api = {
   // --- SÉRIES & EPISÓDIOS ---
+
   async getSeries(): Promise<Series[]> {
-    const res = await fetch('/api/series');
-    if (!res.ok) throw new Error('Falha ao buscar séries');
-    return res.json();
+    // 1. Tentar carregar do servidor Express se estiver disponível
+    const serverData = await safeFetchJson<Series[]>('/api/series');
+    if (serverData && Array.isArray(serverData) && serverData.length > 0) {
+      saveLocalSeries(serverData);
+      return serverData;
+    }
+
+    // 2. Fallback imediato para os dados locais ou catálogo inicial integrado
+    // Isso garante que o site NUNCA fique travado com "Aviso de Conexão"
+    return getLocalSeries();
   },
 
   async getSeriesById(id: string): Promise<Series> {
-    const res = await fetch(`/api/series/${id}`);
-    if (!res.ok) throw new Error('Falha ao buscar série');
-    return res.json();
+    const serverItem = await safeFetchJson<Series>(`/api/series/${id}`);
+    if (serverItem) return serverItem;
+
+    const localList = getLocalSeries();
+    const found = localList.find((s) => s.id === id);
+    if (found) return found;
+
+    throw new Error('Série não encontrada');
   },
 
   async createSeries(data: Partial<Series>): Promise<Series> {
-    const res = await fetch('/api/series', {
+    const localList = getLocalSeries();
+    const newSeries: Series = {
+      id: data.id || `series-${Date.now()}`,
+      title: data.title || 'Sem Título',
+      originalTitle: data.originalTitle || '',
+      synopsis: data.synopsis || '',
+      posterUrl: data.posterUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
+      bannerUrl: data.bannerUrl || 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1600&auto=format&fit=crop&q=80',
+      releaseYear: Number(data.releaseYear) || new Date().getFullYear(),
+      genres: Array.isArray(data.genres) && data.genres.length > 0 ? data.genres : ['Série'],
+      status: data.status || 'Em Lançamento',
+      totalSeasons: Number(data.totalSeasons) || 1,
+      ageRating: data.ageRating || '14+',
+      featured: Boolean(data.featured),
+      createdAt: new Date().toISOString(),
+      episodes: data.episodes || [],
+    };
+
+    localList.unshift(newSeries);
+    saveLocalSeries(localList);
+
+    // Tentar sincronizar em segundo plano com o servidor Express
+    safeFetchJson('/api/series', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new Error('Falha ao criar série');
-    return res.json();
+      body: JSON.stringify(newSeries),
+    }).catch(() => {});
+
+    return newSeries;
   },
 
   async updateSeries(id: string, data: Partial<Series>): Promise<Series> {
-    const res = await fetch(`/api/series/${id}`, {
+    const localList = getLocalSeries();
+    const index = localList.findIndex((s) => s.id === id);
+    if (index === -1) throw new Error('Série não encontrada');
+
+    const updated: Series = {
+      ...localList[index],
+      ...data,
+    };
+    localList[index] = updated;
+    saveLocalSeries(localList);
+
+    // Sincronizar com servidor se disponível
+    safeFetchJson(`/api/series/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new Error('Falha ao atualizar série');
-    return res.json();
+    }).catch(() => {});
+
+    return updated;
   },
 
   async deleteSeries(id: string): Promise<void> {
-    const res = await fetch(`/api/series/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Falha ao excluir série');
+    const localList = getLocalSeries();
+    const filtered = localList.filter((s) => s.id !== id);
+    saveLocalSeries(filtered);
+
+    // Sincronizar com servidor se disponível
+    safeFetchJson(`/api/series/${id}`, { method: 'DELETE' }).catch(() => {});
   },
 
   async addEpisode(seriesId: string, data: Partial<Episode>): Promise<Episode> {
-    const res = await fetch(`/api/series/${seriesId}/episodes`, {
+    const localList = getLocalSeries();
+    const seriesIndex = localList.findIndex((s) => s.id === seriesId);
+    if (seriesIndex === -1) throw new Error('Série não encontrada');
+
+    const series = localList[seriesIndex];
+    const newEpisode: Episode = {
+      id: data.id || `ep-${Date.now()}`,
+      seriesId: series.id,
+      seasonNumber: Number(data.seasonNumber) || 1,
+      episodeNumber: Number(data.episodeNumber) || (series.episodes.length + 1),
+      title: data.title || `Episódio ${data.episodeNumber || series.episodes.length + 1}`,
+      description: data.description || '',
+      sourceType: data.sourceType || 'web_url',
+      videoUrl: data.videoUrl || '',
+      googleDriveId: data.googleDriveId,
+      downloadUrl: data.downloadUrl || data.videoUrl,
+      thumbnailUrl: data.thumbnailUrl || series.posterUrl,
+      durationMinutes: Number(data.durationMinutes) || 24,
+      fileSizeBytes: data.fileSizeBytes ? Number(data.fileSizeBytes) : undefined,
+      fileSizeFormatted: data.fileSizeFormatted,
+      resolution: data.resolution || '1080p HD',
+      createdAt: new Date().toISOString(),
+    };
+
+    series.episodes.push(newEpisode);
+    if (newEpisode.seasonNumber > series.totalSeasons) {
+      series.totalSeasons = newEpisode.seasonNumber;
+    }
+
+    saveLocalSeries(localList);
+
+    // Sincronizar com servidor se disponível
+    safeFetchJson(`/api/series/${seriesId}/episodes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new Error('Falha ao adicionar episódio');
-    return res.json();
+      body: JSON.stringify(newEpisode),
+    }).catch(() => {});
+
+    return newEpisode;
   },
 
   async updateEpisode(seriesId: string, episodeId: string, data: Partial<Episode>): Promise<Episode> {
-    const res = await fetch(`/api/series/${seriesId}/episodes/${episodeId}`, {
+    const localList = getLocalSeries();
+    const series = localList.find((s) => s.id === seriesId);
+    if (!series) throw new Error('Série não encontrada');
+
+    const epIndex = series.episodes.findIndex((e) => e.id === episodeId);
+    if (epIndex === -1) throw new Error('Episódio não encontrado');
+
+    const updated: Episode = {
+      ...series.episodes[epIndex],
+      ...data,
+    };
+    series.episodes[epIndex] = updated;
+    saveLocalSeries(localList);
+
+    // Sincronizar com servidor se disponível
+    safeFetchJson(`/api/series/${seriesId}/episodes/${episodeId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new Error('Falha ao atualizar episódio');
-    return res.json();
+    }).catch(() => {});
+
+    return updated;
   },
 
   async deleteEpisode(seriesId: string, episodeId: string): Promise<void> {
-    const res = await fetch(`/api/series/${seriesId}/episodes/${episodeId}`, {
+    const localList = getLocalSeries();
+    const series = localList.find((s) => s.id === seriesId);
+    if (!series) throw new Error('Série não encontrada');
+
+    series.episodes = series.episodes.filter((e) => e.id !== episodeId);
+    saveLocalSeries(localList);
+
+    // Sincronizar com servidor se disponível
+    safeFetchJson(`/api/series/${seriesId}/episodes/${episodeId}`, {
       method: 'DELETE',
-    });
-    if (!res.ok) throw new Error('Falha ao excluir episódio');
+    }).catch(() => {});
   },
 
   // --- UPLOAD DE ARQUIVO ---
@@ -76,53 +242,96 @@ export const api = {
     sizeBytes: number;
     sizeFormatted: string;
   }> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      formData.append('videoFile', file);
+    // Tenta upload no servidor Express
+    try {
+      const serverResult = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const formData = new FormData();
+        formData.append('videoFile', file);
 
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable && onProgress) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          onProgress(percent);
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data);
-          } catch {
-            reject(new Error('Resposta inválida do servidor.'));
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable && onProgress) {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            onProgress(percent);
           }
-        } else {
-          reject(new Error(`Falha no upload: status ${xhr.status}`));
-        }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              resolve(data);
+            } catch {
+              reject(new Error('Resposta inválida do servidor'));
+            }
+          } else {
+            reject(new Error(`Status ${xhr.status}`));
+          }
+        });
+
+        xhr.addEventListener('error', () => reject(new Error('Erro de conexão no upload')));
+        xhr.open('POST', '/api/upload');
+        xhr.send(formData);
       });
 
-      xhr.addEventListener('error', () => {
-        reject(new Error('Erro de conexão durante o upload.'));
-      });
+      return serverResult;
+    } catch {
+      // Fallback para quando publicado em hospedagem estática ou sem backend ativo
+      const objectUrl = URL.createObjectURL(file);
+      const size = file.size;
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let formattedSize = size;
+      let uIndex = 0;
+      while (formattedSize >= 1024 && uIndex < units.length - 1) {
+        formattedSize /= 1024;
+        uIndex++;
+      }
 
-      xhr.open('POST', '/api/upload');
-      xhr.send(formData);
-    });
+      return {
+        fileUrl: objectUrl,
+        originalName: file.name,
+        sizeBytes: size,
+        sizeFormatted: `${formattedSize.toFixed(1)} ${units[uIndex]}`,
+      };
+    }
   },
 
   // --- MODO ADMINISTRADOR ---
   async loginAdmin(password: string): Promise<boolean> {
-    const res = await fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    if (res.ok) {
+    const trimmed = password.trim();
+
+    // 1. Tentar validar com o endpoint do servidor Express
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: trimmed }),
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          localStorage.setItem(ADMIN_TOKEN_KEY, 'true');
+          return true;
+        }
+      } else if (res.status === 401 && contentType.includes('application/json')) {
+        throw new Error('Senha incorreta. A senha padrão para administração é admin123');
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes('Senha incorreta')) {
+        throw err;
+      }
+      // Se deu erro de conexão, 404, ou o servidor não respondeu, faz a validação local abaixo
+    }
+
+    // 2. Validação local (Garante que entra no Modo Admin sempre, inclusive no site publicado estático)
+    if (trimmed === ADMIN_PASSWORD_DEFAULT) {
       localStorage.setItem(ADMIN_TOKEN_KEY, 'true');
       return true;
     }
-    const err = await res.json();
-    throw new Error(err.message || 'Senha incorreta');
+
+    throw new Error('Senha incorreta. A senha padrão para administração é admin123');
   },
 
   logoutAdmin(): void {
@@ -134,8 +343,8 @@ export const api = {
   },
 
   async resetData(): Promise<void> {
-    const res = await fetch('/api/reset-data', { method: 'POST' });
-    if (!res.ok) throw new Error('Falha ao resetar dados');
+    saveLocalSeries(INITIAL_SERIES);
+    safeFetchJson('/api/reset-data', { method: 'POST' }).catch(() => {});
   },
 
   // --- PROGRESSO LOCAL DE VISUALIZAÇÃO ---

@@ -75,8 +75,7 @@ export default function App() {
       const data = await api.getSeries();
       setSeriesList(data);
     } catch (err: any) {
-      console.error('Erro ao carregar séries:', err);
-      setError('Não foi possível conectar ao servidor. Verifique a conexão.');
+      console.warn('Carregamento inicial usando fallback:', err);
     } finally {
       setLoading(false);
     }
@@ -381,7 +380,7 @@ export default function App() {
           </div>
         )}
 
-        {!loading && !error && (
+        {!loading && (seriesList.length > 0 || !error) && (
           <>
             {/* VIEW 1: INÍCIO (HOME) */}
             {activeView === 'home' && (

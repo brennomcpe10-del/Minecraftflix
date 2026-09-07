@@ -71,6 +71,17 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // Habilitar CORS para garantir acesso em iframes e preview compartilhado
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // Servir uploads de vídeos diretamente
   app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -294,6 +305,11 @@ async function startServer() {
   app.post('/api/reset-data', (_req, res) => {
     saveData(INITIAL_SERIES);
     res.json({ success: true, message: 'Dados restaurados para o estado padrão' });
+  });
+
+  // Retornar JSON 404 para qualquer rota /api desconhecida (evita retornar o HTML do index.html)
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'Endpoint de API não encontrado' });
   });
 
   // --- VITE MIDDLEWARE (DEV) & STATIC FILES (PROD) ---
