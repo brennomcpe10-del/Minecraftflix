@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X,
   Play,
@@ -86,7 +86,39 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [watchedFilter, setWatchedFilter] = useState<'all' | 'unwatched' | 'watched'>('all');
 
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Estado centralizado para controle de visibilidade da barra de controles
+  const [isDraggingSlider, setIsDraggingSlider] = useState(false);
+  const isDraggingSliderRef = useRef(false);
+  isDraggingSliderRef.current = isDraggingSlider;
+  const lastTapTimeRef = useRef(0);
+  const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Limpar timer de ocultação existente
+  const clearControlsTimer = useCallback(() => {
+    if (controlsTimerRef.current) {
+      clearTimeout(controlsTimerRef.current);
+      controlsTimerRef.current = null;
+    }
+  }, []);
+
+  // Agendar desaparecimento dos controles após 3 segundos
+  const scheduleControlsHide = useCallback((delay = 3000) => {
+    clearControlsTimer();
+    controlsTimerRef.current = setTimeout(() => {
+      // Se o vídeo estiver pausado ou usuário interagindo com a barra de progresso, não esconder
+      if (videoRef.current?.paused || isDraggingSliderRef.current) {
+        return;
+      }
+      setShowControls(false);
+      setShowSpeedMenu(false);
+    }, delay);
+  }, [clearControlsTimer]);
+
+  // Mostrar controles e agendar desaparecimento automático em 3 segundos
+  const showAndScheduleHide = useCallback((delay = 3000) => {
+    setShowControls(true);
+    scheduleControlsHide(delay);
+  }, [scheduleControlsHide]);
 
   // Ordenar todos os episódios da série por temporada e número
   const allEpisodes = [...(series.episodes || [])].sort((a, b) => {
@@ -138,14 +170,39 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     }
   }, [episode.id, episode.sourceType]);
 
-  // Carregar progresso salvo de reprodução
+  // Carregar progresso salvo e iniciar reprodução imediata do episódio
   useEffect(() => {
     const progressMap = api.getProgressMap();
     const saved = progressMap[episode.id];
-    if (saved && saved.currentTimeSeconds > 0 && videoRef.current) {
-      videoRef.current.currentTime = saved.currentTimeSeconds;
+    if (videoRef.current) {
+      if (saved && saved.currentTimeSeconds > 0) {
+        videoRef.current.currentTime = saved.currentTimeSeconds;
+      } else {
+        videoRef.current.currentTime = 0;
+      }
+
+      // Iniciar reprodução do vídeo imediatamente sem necessitar de segundo clique
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            showAndScheduleHide(3000);
+          })
+          .catch((err) => {
+            console.warn('Autoplay aguardando interação do usuário:', err);
+            setShowControls(true);
+          });
+      }
     }
-  }, [episode.id]);
+
+    // Rolar suavemente a visualização para o topo do reprodutor
+    containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+
+    return () => {
+      clearControlsTimer();
+    };
+  }, [episode.id, clearControlsTimer, showAndScheduleHide]);
 
   // Salvar progresso de reprodução periodicamente
   useEffect(() => {
@@ -197,30 +254,65 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     };
   }, []);
 
-  // Esconder controles após 3.5 segundos de inatividade
-  const triggerControlsVisibility = () => {
-    setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying) {
-        setShowControls(false);
-        setShowSpeedMenu(false);
-      }
-    }, 3500);
-  };
-
+  // Movimento de mouse no desktop: mostrar controles e agendar auto-hide
   const handlePlayerMouseMove = () => {
-    triggerControlsVisibility();
+    if (!showControls) {
+      setShowControls(true);
+    }
+    if (isPlaying && !isDraggingSliderRef.current) {
+      scheduleControlsHide(3000);
+    }
   };
 
-  // Toque na área do player: alternar visibilidade dos controles
-  const handlePlayerTap = () => {
-    if (showControls && isPlaying) {
+  const handlePlayerMouseLeave = () => {
+    if (isPlaying && !isDraggingSliderRef.current) {
+      clearControlsTimer();
       setShowControls(false);
       setShowSpeedMenu(false);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    }
+  };
+
+  // Toque na área do player: alternar visibilidade sem piscar e sem disparos múltiplos
+  const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 300) {
+      return; // Prevenir disparo duplicado (touch + click no mobile)
+    }
+    lastTapTimeRef.current = now;
+
+    // Se o clique foi em um elemento interativo (botão, slider, etc), renovar tempo dos controles
+    const target = e.target as HTMLElement | null;
+    if (target && target.closest('button, input, select, a, .player-scrubber')) {
+      if (isPlaying && !isDraggingSliderRef.current) {
+        scheduleControlsHide(3000);
+      }
+      return;
+    }
+
+    if (showControls && isPlaying) {
+      // Controles estavam visíveis durante a reprodução: toque esconde imediatamente
+      clearControlsTimer();
+      setShowControls(false);
+      setShowSpeedMenu(false);
     } else {
-      triggerControlsVisibility();
+      // Controles estavam ocultos: toque mostra e programa auto-hide em aproximadamente 3 segundos
+      showAndScheduleHide(3000);
+    }
+  };
+
+  // Manipuladores de arraste da linha do tempo para NUNCA ocultar enquanto arrasta
+  const handleSliderDragStart = () => {
+    setIsDraggingSlider(true);
+    isDraggingSliderRef.current = true;
+    clearControlsTimer();
+    setShowControls(true);
+  };
+
+  const handleSliderDragEnd = () => {
+    setIsDraggingSlider(false);
+    isDraggingSliderRef.current = false;
+    if (isPlaying) {
+      scheduleControlsHide(3000);
     }
   };
 
@@ -264,14 +356,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         .play()
         .then(() => {
           setIsPlaying(true);
-          triggerControlsVisibility();
+          showAndScheduleHide(3000);
         })
         .catch(console.warn);
     } else {
       videoRef.current.pause();
       setIsPlaying(false);
+      clearControlsTimer();
       setShowControls(true);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     }
   };
 
@@ -279,9 +371,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(
       0,
-      Math.min(videoRef.current.duration, videoRef.current.currentTime + seconds)
+      Math.min(videoRef.current.duration || 0, videoRef.current.currentTime + seconds)
     );
-    triggerControlsVisibility();
+    showAndScheduleHide(3000);
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,7 +382,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     if (videoRef.current) {
       videoRef.current.currentTime = time;
     }
-    triggerControlsVisibility();
+    showAndScheduleHide(3000);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,6 +392,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       videoRef.current.volume = val;
       setIsMuted(val === 0);
     }
+    showAndScheduleHide(3000);
   };
 
   const toggleMute = () => {
@@ -312,6 +405,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       videoRef.current.muted = true;
       setIsMuted(true);
     }
+    showAndScheduleHide(3000);
   };
 
   const changeSpeed = (rate: number) => {
@@ -320,7 +414,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       videoRef.current.playbackRate = rate;
     }
     setShowSpeedMenu(false);
-    triggerControlsVisibility();
+    showAndScheduleHide(3000);
   };
 
   // Detecção de iPhone / iPad / iPod
@@ -397,6 +491,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
       // Ativar estado de tela cheia CSS (garante 100vw e 100vh em qualquer dispositivo)
       setIsFullscreen(true);
+      showAndScheduleHide(3000);
 
       // No Android / navegadores compatíveis: tentar travar orientação horizontal (landscape)
       try {
@@ -427,6 +522,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       }
 
       setIsFullscreen(false);
+      showAndScheduleHide(3000);
 
       // Desbloquear orientação de tela
       try {
@@ -531,7 +627,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         <div
           ref={playerContainerRef}
           onMouseMove={handlePlayerMouseMove}
-          className={`relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden ${
+          onMouseLeave={handlePlayerMouseLeave}
+          className={`relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden transition-all ${
+            !showControls && isPlaying ? 'cursor-none' : 'cursor-default'
+          } ${
             isFullscreen
               ? 'fixed inset-0 z-[99999] w-screen h-screen max-w-none aspect-auto'
               : 'max-w-5xl mx-auto shadow-2xl'
@@ -541,7 +640,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           {/* Top Bar inside Player (Overlaid controls) */}
           <div
             className={`absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-black/90 via-black/60 to-transparent pt-3 pb-6 px-3 sm:px-6 flex items-center justify-between gap-2 transition-opacity duration-300 ${
-              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
             }`}
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -623,6 +722,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   src={episode.videoUrl}
                   poster={episode.thumbnailUrl || series.posterUrl}
                   className="max-w-full max-h-full w-full h-full object-contain"
+                  autoPlay
                   playsInline
                   webkit-playsinline="true"
                   x5-playsinline="true"
@@ -634,13 +734,22 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   }}
                   onEnded={() => {
                     setIsPlaying(false);
+                    clearControlsTimer();
+                    setShowControls(true);
                     onToggleWatched(episode.id);
                     if (nextEpisode) {
                       onSelectEpisode(nextEpisode);
                     }
                   }}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    scheduleControlsHide(3000);
+                  }}
+                  onPause={() => {
+                    setIsPlaying(false);
+                    clearControlsTimer();
+                    setShowControls(true);
+                  }}
                 />
 
                 {/* Controles Centrais Play/Pause/Skip */}
@@ -700,7 +809,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               toggleFullscreen();
             }}
             className={`absolute bottom-16 sm:bottom-18 right-3 sm:right-6 z-30 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-black/85 hover:bg-black active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-white/30 shadow-2xl backdrop-blur-md cursor-pointer transition-all duration-300 min-h-[48px] min-w-[48px] ${
-              showControls || !isPlaying ? 'opacity-100' : 'opacity-70 hover:opacity-100'
+              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
             }`}
             title="Tocar para colocar em Tela Cheia ⛶"
             id="player-big-fullscreen-btn"
@@ -721,7 +830,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           {/* Barra de Controles Inferior do Player */}
           <div
             className={`absolute bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-black/95 via-black/75 to-transparent pt-4 pb-3 px-3 sm:px-6 transition-opacity duration-300 ${
-              showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
             }`}
           >
             {/* Scrubber / Linha do Tempo */}
@@ -737,6 +846,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   step={0.1}
                   value={currentTime}
                   onChange={handleSeek}
+                  onMouseDown={handleSliderDragStart}
+                  onMouseUp={handleSliderDragEnd}
+                  onTouchStart={handleSliderDragStart}
+                  onTouchEnd={handleSliderDragEnd}
                   className="player-scrubber flex-1 cursor-pointer"
                   id="player-timeline-slider"
                 />

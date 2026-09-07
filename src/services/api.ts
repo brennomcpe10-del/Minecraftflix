@@ -130,7 +130,7 @@ function getLocalSeries(): Series[] {
   } catch (err) {
     console.warn('Erro ao ler séries do localStorage:', err);
   }
-  return [];
+  return INITIAL_SERIES;
 }
 
 function saveLocalSeries(series: Series[]): void {
