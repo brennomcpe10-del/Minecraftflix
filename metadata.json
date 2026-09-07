@@ -1,0 +1,6 @@
+{
+  "name": "Portal de Episódios",
+  "description": "Plataforma web moderna para gerenciar, assistir e baixar episódios de séries e animes com suporte a Google Drive, upload direto e modo administrador.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
