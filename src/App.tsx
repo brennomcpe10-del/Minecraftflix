@@ -84,6 +84,20 @@ export default function App() {
   useEffect(() => {
     loadSeries();
     setIsAdmin(api.isAdminAuthenticated());
+
+    // Assinar atualizações em tempo real do Firestore para sincronização entre dispositivos
+    const unsubscribe = api.subscribeSeries((updatedList) => {
+      setSeriesList(updatedList);
+      setSelectedSeriesForDetail((prev) => {
+        if (!prev) return null;
+        const fresh = updatedList.find((s) => s.id === prev.id);
+        return fresh || prev;
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [loadSeries]);
 
   // Logout admin

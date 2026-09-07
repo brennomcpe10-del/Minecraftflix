@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "Series": {
+      "title": "Series",
+      "description": "Uma série ou anime com seus episódios e metadados",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único da série" },
+        "title": { "type": "string", "description": "Título principal da série" },
+        "originalTitle": { "type": "string", "description": "Título original ou secundário" },
+        "synopsis": { "type": "string", "description": "Sinopse descritiva da série" },
+        "posterUrl": { "type": "string", "description": "URL do pôster vertical" },
+        "bannerUrl": { "type": "string", "description": "URL do banner horizontal de destaque" },
+        "releaseYear": { "type": "number", "description": "Ano de lançamento" },
+        "genres": { "type": "array", "description": "Lista de gêneros e categorias" },
+        "status": { "type": "string", "description": "Status da série (Em Lançamento, Completo, etc)" },
+        "totalSeasons": { "type": "number", "description": "Quantidade total de temporadas" },
+        "ageRating": { "type": "string", "description": "Classificação indicativa" },
+        "featured": { "type": "boolean", "description": "Se está em destaque na página inicial" },
+        "createdAt": { "type": "string", "description": "Data de criação em ISO string" },
+        "episodes": { "type": "array", "description": "Lista de episódios da série" }
+      },
+      "required": ["id", "title"]
+    }
+  },
+  "firestore": {
+    "/series/{seriesId}": {
+      "schema": "Series",
+      "description": "Coleção de séries e episódios compartilhados em nuvem entre todos os dispositivos"
+    }
+  }
+}

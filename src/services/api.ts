@@ -1,3 +1,13 @@
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { Series, Episode, WatchProgress } from '../types';
 import { INITIAL_SERIES } from '../data/defaultData';
 
@@ -7,7 +17,7 @@ const ADMIN_TOKEN_KEY = 'portal_admin_authenticated';
 const ADMIN_PASSWORD_DEFAULT = 'admin123';
 
 /**
- * Utilitários de Persistência Local (Offline-First e Fallback Imediato)
+ * Utilitários de Persistência Local (Offline-First e Caching)
  */
 function getLocalSeries(): Series[] {
   try {
@@ -21,7 +31,6 @@ function getLocalSeries(): Series[] {
   } catch (err) {
     console.warn('Erro ao ler séries do localStorage:', err);
   }
-  // Se não existir ou estiver corrompido, inicializa com o catálogo padrão
   saveLocalSeries(INITIAL_SERIES);
   return INITIAL_SERIES;
 }
@@ -35,54 +44,120 @@ function saveLocalSeries(series: Series[]): void {
 }
 
 /**
- * Tenta fazer uma requisição JSON segura para o servidor Express.
- * Se o servidor estiver offline, retornar 404, retornar HTML ou falhar na rede,
- * retorna null em vez de quebrar a aplicação.
+ * Sincroniza séries criadas no notebook antes da ativação do Firestore
  */
-async function safeFetchJson<T>(url: string, options?: RequestInit): Promise<T | null> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s timeout
+async function syncLocalCustomSeriesToCloud(firestoreList: Series[]): Promise<Series[]> {
+  const localList = getLocalSeries();
+  const firestoreIds = new Set(firestoreList.map((s) => s.id));
+  const missingInCloud = localList.filter((s) => !firestoreIds.has(s.id));
 
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return null;
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      // Recebeu HTML (típico de SPA redirect em servidor estático)
-      return null;
+  if (missingInCloud.length > 0) {
+    console.info(`Sincronizando ${missingInCloud.length} séries locais do notebook para o Firebase Firestore...`);
+    for (const item of missingInCloud) {
+      try {
+        await setDoc(doc(db, 'series', item.id), item);
+        firestoreList.unshift(item);
+      } catch (err) {
+        console.warn('Erro ao subir série local para a nuvem:', err);
+      }
     }
-
-    return await res.json();
-  } catch {
-    return null;
+    saveLocalSeries(firestoreList);
   }
+
+  return firestoreList;
+}
+
+/**
+ * Popula o Firestore com o catálogo padrão se a base estiver vazia
+ */
+async function seedInitialSeriesToCloud(): Promise<Series[]> {
+  const localList = getLocalSeries();
+  const listToSeed = localList.length > 0 ? localList : INITIAL_SERIES;
+
+  for (const s of listToSeed) {
+    try {
+      await setDoc(doc(db, 'series', s.id), s);
+    } catch (e) {
+      console.warn('Erro ao semear série no Firestore:', e);
+    }
+  }
+  return listToSeed;
 }
 
 export const api = {
-  // --- SÉRIES & EPISÓDIOS ---
+  // --- SINCRONIZAÇÃO EM TEMPO REAL FIRESTORE ---
+
+  /**
+   * Assina atualizações em tempo real do Firestore para que mudanças feitas no notebook
+   * apareçam instantaneamente no celular sem precisar recarregar.
+   */
+  subscribeSeries(callback: (series: Series[]) => void): () => void {
+    try {
+      const colRef = collection(db, 'series');
+      const unsubscribe = onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: Series[] = [];
+            snapshot.forEach((d) => {
+              list.push(d.data() as Series);
+            });
+            saveLocalSeries(list);
+            callback(list);
+          }
+        },
+        (error) => {
+          console.warn('Aviso no listener do Firestore (modo offline/espera):', error);
+        }
+      );
+      return unsubscribe;
+    } catch (err) {
+      console.warn('Não foi possível iniciar o listener Firestore:', err);
+      return () => {};
+    }
+  },
+
+  // --- SÉRIES & EPISÓDIOS (NUVEM FIRESTORE + LOCAL CACHE) ---
 
   async getSeries(): Promise<Series[]> {
-    // 1. Tentar carregar do servidor Express se estiver disponível
-    const serverData = await safeFetchJson<Series[]>('/api/series');
-    if (serverData && Array.isArray(serverData) && serverData.length > 0) {
-      saveLocalSeries(serverData);
-      return serverData;
-    }
+    try {
+      // 1. Tentar buscar direto do banco de dados na nuvem (Firestore)
+      const colRef = collection(db, 'series');
+      const snapshot = await getDocs(colRef);
 
-    // 2. Fallback imediato para os dados locais ou catálogo inicial integrado
-    // Isso garante que o site NUNCA fique travado com "Aviso de Conexão"
-    return getLocalSeries();
+      if (!snapshot.empty) {
+        let list: Series[] = [];
+        snapshot.forEach((d) => {
+          list.push(d.data() as Series);
+        });
+
+        // Sincronizar séries que estavam salvas apenas no notebook
+        list = await syncLocalCustomSeriesToCloud(list);
+
+        saveLocalSeries(list);
+        return list;
+      } else {
+        // Banco novo/vazio: faz o seed inicial com as séries locais/padrão
+        const seeded = await seedInitialSeriesToCloud();
+        saveLocalSeries(seeded);
+        return seeded;
+      }
+    } catch (firestoreError) {
+      console.warn('Firestore indisponível temporariamente, carregando dados locais:', firestoreError);
+      return getLocalSeries();
+    }
   },
 
   async getSeriesById(id: string): Promise<Series> {
-    const serverItem = await safeFetchJson<Series>(`/api/series/${id}`);
-    if (serverItem) return serverItem;
+    try {
+      const docRef = doc(db, 'series', id);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        return snapshot.data() as Series;
+      }
+    } catch (err) {
+      console.warn('Erro ao buscar série no Firestore:', err);
+    }
 
     const localList = getLocalSeries();
     const found = localList.find((s) => s.id === id);
@@ -110,15 +185,16 @@ export const api = {
       episodes: data.episodes || [],
     };
 
+    // 1. Salvar no Firestore (Nuvem compartilhada entre todos os aparelhos)
+    try {
+      await setDoc(doc(db, 'series', newSeries.id), newSeries);
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao salvar no Firestore, mantendo local:', cloudErr);
+    }
+
+    // 2. Salvar localmente
     localList.unshift(newSeries);
     saveLocalSeries(localList);
-
-    // Tentar sincronizar em segundo plano com o servidor Express
-    safeFetchJson('/api/series', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSeries),
-    }).catch(() => {});
 
     return newSeries;
   },
@@ -132,26 +208,33 @@ export const api = {
       ...localList[index],
       ...data,
     };
+
+    // 1. Atualizar no Firestore
+    try {
+      await setDoc(doc(db, 'series', id), updated, { merge: true });
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao atualizar no Firestore:', cloudErr);
+    }
+
+    // 2. Salvar localmente
     localList[index] = updated;
     saveLocalSeries(localList);
-
-    // Sincronizar com servidor se disponível
-    safeFetchJson(`/api/series/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }).catch(() => {});
 
     return updated;
   },
 
   async deleteSeries(id: string): Promise<void> {
+    // 1. Excluir do Firestore
+    try {
+      await deleteDoc(doc(db, 'series', id));
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao excluir do Firestore:', cloudErr);
+    }
+
+    // 2. Atualizar localmente
     const localList = getLocalSeries();
     const filtered = localList.filter((s) => s.id !== id);
     saveLocalSeries(filtered);
-
-    // Sincronizar com servidor se disponível
-    safeFetchJson(`/api/series/${id}`, { method: 'DELETE' }).catch(() => {});
   },
 
   async addEpisode(seriesId: string, data: Partial<Episode>): Promise<Episode> {
@@ -184,14 +267,15 @@ export const api = {
       series.totalSeasons = newEpisode.seasonNumber;
     }
 
-    saveLocalSeries(localList);
+    // 1. Atualizar a série com o novo episódio no Firestore
+    try {
+      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao adicionar episódio no Firestore:', cloudErr);
+    }
 
-    // Sincronizar com servidor se disponível
-    safeFetchJson(`/api/series/${seriesId}/episodes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newEpisode),
-    }).catch(() => {});
+    // 2. Salvar localmente
+    saveLocalSeries(localList);
 
     return newEpisode;
   },
@@ -209,14 +293,16 @@ export const api = {
       ...data,
     };
     series.episodes[epIndex] = updated;
-    saveLocalSeries(localList);
 
-    // Sincronizar com servidor se disponível
-    safeFetchJson(`/api/series/${seriesId}/episodes/${episodeId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }).catch(() => {});
+    // 1. Atualizar no Firestore
+    try {
+      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao atualizar episódio no Firestore:', cloudErr);
+    }
+
+    // 2. Salvar localmente
+    saveLocalSeries(localList);
 
     return updated;
   },
@@ -227,12 +313,16 @@ export const api = {
     if (!series) throw new Error('Série não encontrada');
 
     series.episodes = series.episodes.filter((e) => e.id !== episodeId);
-    saveLocalSeries(localList);
 
-    // Sincronizar com servidor se disponível
-    safeFetchJson(`/api/series/${seriesId}/episodes/${episodeId}`, {
-      method: 'DELETE',
-    }).catch(() => {});
+    // 1. Atualizar no Firestore
+    try {
+      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
+    } catch (cloudErr) {
+      console.warn('Aviso: Falha ao deletar episódio no Firestore:', cloudErr);
+    }
+
+    // 2. Salvar localmente
+    saveLocalSeries(localList);
   },
 
   // --- UPLOAD DE ARQUIVO ---
@@ -242,7 +332,7 @@ export const api = {
     sizeBytes: number;
     sizeFormatted: string;
   }> {
-    // Tenta upload no servidor Express
+    // Tenta upload via backend Express se disponível
     try {
       const serverResult = await new Promise<any>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -276,7 +366,7 @@ export const api = {
 
       return serverResult;
     } catch {
-      // Fallback para quando publicado em hospedagem estática ou sem backend ativo
+      // Fallback para arquivo local via object URL
       const objectUrl = URL.createObjectURL(file);
       const size = file.size;
       const units = ['B', 'KB', 'MB', 'GB'];
@@ -300,7 +390,7 @@ export const api = {
   async loginAdmin(password: string): Promise<boolean> {
     const trimmed = password.trim();
 
-    // 1. Tentar validar com o endpoint do servidor Express
+    // 1. Tenta validar no endpoint se disponível
     try {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
@@ -322,10 +412,9 @@ export const api = {
       if (err.message && err.message.includes('Senha incorreta')) {
         throw err;
       }
-      // Se deu erro de conexão, 404, ou o servidor não respondeu, faz a validação local abaixo
     }
 
-    // 2. Validação local (Garante que entra no Modo Admin sempre, inclusive no site publicado estático)
+    // 2. Validação local garantida em qualquer dispositivo (celular ou notebook)
     if (trimmed === ADMIN_PASSWORD_DEFAULT) {
       localStorage.setItem(ADMIN_TOKEN_KEY, 'true');
       return true;
@@ -344,10 +433,16 @@ export const api = {
 
   async resetData(): Promise<void> {
     saveLocalSeries(INITIAL_SERIES);
-    safeFetchJson('/api/reset-data', { method: 'POST' }).catch(() => {});
+    for (const s of INITIAL_SERIES) {
+      try {
+        await setDoc(doc(db, 'series', s.id), s);
+      } catch (e) {
+        console.warn('Erro ao resetar no Firestore:', e);
+      }
+    }
   },
 
-  // --- PROGRESSO LOCAL DE VISUALIZAÇÃO ---
+  // --- PROGRESSO DE VISUALIZAÇÃO ---
   getProgressMap(): Record<string, WatchProgress> {
     try {
       const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
@@ -370,7 +465,7 @@ export const api = {
     try {
       localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(map));
     } catch (e) {
-      console.warn('Erro ao salvar progresso no localStorage:', e);
+      console.warn('Erro ao salvar progresso:', e);
     }
   },
 
