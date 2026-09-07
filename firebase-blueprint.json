@@ -27,6 +27,10 @@
     "/series/{seriesId}": {
       "schema": "Series",
       "description": "Coleção de séries e episódios compartilhados em nuvem entre todos os dispositivos"
+    },
+    "/portal_metadata/{docId}": {
+      "schema": "Series",
+      "description": "Metadados globais de inicialização do portal"
     }
   }
 }

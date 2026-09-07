@@ -1,15 +1,29 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export const db = getFirestore(
-  app,
+const databaseId =
   firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
     ? firebaseConfig.firestoreDatabaseId
-    : undefined
-);
+    : undefined;
+
+// Usar initializeFirestore com ignoreUndefinedProperties: true para evitar qualquer erro de undefined em documentos
+let firestoreInstance;
+try {
+  firestoreInstance = initializeFirestore(
+    app,
+    {
+      ignoreUndefinedProperties: true,
+    },
+    databaseId
+  );
+} catch {
+  firestoreInstance = getFirestore(app, databaseId);
+}
+
+export const db = firestoreInstance;
 
 export async function testFirestoreConnection(): Promise<boolean> {
   try {

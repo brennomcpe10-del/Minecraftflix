@@ -12,9 +12,54 @@ import { Series, Episode, WatchProgress } from '../types';
 import { INITIAL_SERIES } from '../data/defaultData';
 
 const SERIES_STORAGE_KEY = 'portal_series_data_v2';
+const DELETED_SERIES_STORAGE_KEY = 'portal_deleted_series_ids_v1';
 const PROGRESS_STORAGE_KEY = 'portal_watch_progress_v1';
 const ADMIN_TOKEN_KEY = 'portal_admin_authenticated';
 const ADMIN_PASSWORD_DEFAULT = 'admin123';
+
+/**
+ * Remove com precisão valores 'undefined' antes de enviar ao Firestore.
+ * O Firestore rejeita objetos contendo campos com valor 'undefined'.
+ */
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  return JSON.parse(
+    JSON.stringify(data, (_key, value) => {
+      if (value === undefined) return null;
+      return value;
+    })
+  );
+}
+
+/**
+ * Conjunto de IDs de séries excluídas pelo usuário para impedir qualquer ressuscitação indesejada
+ */
+function getDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_SERIES_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        return new Set(arr);
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao ler séries excluídas do localStorage:', err);
+  }
+  return new Set();
+}
+
+function markAsDeletedLocally(id: string): void {
+  try {
+    const set = getDeletedIds();
+    set.add(id);
+    localStorage.setItem(DELETED_SERIES_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch (err) {
+    console.warn('Erro ao salvar ID deletado:', err);
+  }
+}
 
 /**
  * Utilitários de Persistência Local (Offline-First e Caching)
@@ -22,74 +67,35 @@ const ADMIN_PASSWORD_DEFAULT = 'admin123';
 function getLocalSeries(): Series[] {
   try {
     const raw = localStorage.getItem(SERIES_STORAGE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        const deleted = getDeletedIds();
+        return parsed.filter((s) => !deleted.has(s.id));
       }
     }
   } catch (err) {
     console.warn('Erro ao ler séries do localStorage:', err);
   }
-  saveLocalSeries(INITIAL_SERIES);
-  return INITIAL_SERIES;
+  return [];
 }
 
 function saveLocalSeries(series: Series[]): void {
   try {
-    localStorage.setItem(SERIES_STORAGE_KEY, JSON.stringify(series));
+    const deleted = getDeletedIds();
+    const filtered = series.filter((s) => !deleted.has(s.id));
+    localStorage.setItem(SERIES_STORAGE_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Erro ao salvar séries no localStorage:', err);
   }
-}
-
-/**
- * Sincroniza séries criadas no notebook antes da ativação do Firestore
- */
-async function syncLocalCustomSeriesToCloud(firestoreList: Series[]): Promise<Series[]> {
-  const localList = getLocalSeries();
-  const firestoreIds = new Set(firestoreList.map((s) => s.id));
-  const missingInCloud = localList.filter((s) => !firestoreIds.has(s.id));
-
-  if (missingInCloud.length > 0) {
-    console.info(`Sincronizando ${missingInCloud.length} séries locais do notebook para o Firebase Firestore...`);
-    for (const item of missingInCloud) {
-      try {
-        await setDoc(doc(db, 'series', item.id), item);
-        firestoreList.unshift(item);
-      } catch (err) {
-        console.warn('Erro ao subir série local para a nuvem:', err);
-      }
-    }
-    saveLocalSeries(firestoreList);
-  }
-
-  return firestoreList;
-}
-
-/**
- * Popula o Firestore com o catálogo padrão se a base estiver vazia
- */
-async function seedInitialSeriesToCloud(): Promise<Series[]> {
-  const localList = getLocalSeries();
-  const listToSeed = localList.length > 0 ? localList : INITIAL_SERIES;
-
-  for (const s of listToSeed) {
-    try {
-      await setDoc(doc(db, 'series', s.id), s);
-    } catch (e) {
-      console.warn('Erro ao semear série no Firestore:', e);
-    }
-  }
-  return listToSeed;
 }
 
 export const api = {
   // --- SINCRONIZAÇÃO EM TEMPO REAL FIRESTORE ---
 
   /**
-   * Assina atualizações em tempo real do Firestore para que mudanças feitas no notebook
-   * apareçam instantaneamente no celular sem precisar recarregar.
+   * Assina atualizações em tempo real do Firestore para que qualquer mudança feita
+   * no notebook apareça instantaneamente no celular (e vice-versa) sem precisar recarregar a página.
    */
   subscribeSeries(callback: (series: Series[]) => void): () => void {
     try {
@@ -97,17 +103,19 @@ export const api = {
       const unsubscribe = onSnapshot(
         colRef,
         (snapshot) => {
-          if (!snapshot.empty) {
-            const list: Series[] = [];
-            snapshot.forEach((d) => {
-              list.push(d.data() as Series);
-            });
-            saveLocalSeries(list);
-            callback(list);
-          }
+          const deleted = getDeletedIds();
+          const list: Series[] = [];
+          snapshot.forEach((d) => {
+            const item = d.data() as Series;
+            if (!deleted.has(item.id)) {
+              list.push(item);
+            }
+          });
+          saveLocalSeries(list);
+          callback(list);
         },
         (error) => {
-          console.warn('Aviso no listener do Firestore (modo offline/espera):', error);
+          console.warn('Aviso no listener do Firestore:', error);
         }
       );
       return unsubscribe;
@@ -117,31 +125,24 @@ export const api = {
     }
   },
 
-  // --- SÉRIES & EPISÓDIOS (NUVEM FIRESTORE + LOCAL CACHE) ---
+  // --- SÉRIES & EPISÓDIOS (NUVEM FIRESTORE COMO FONTE DE VERDADE) ---
 
   async getSeries(): Promise<Series[]> {
     try {
-      // 1. Tentar buscar direto do banco de dados na nuvem (Firestore)
       const colRef = collection(db, 'series');
       const snapshot = await getDocs(colRef);
+      const deleted = getDeletedIds();
 
-      if (!snapshot.empty) {
-        let list: Series[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data() as Series);
-        });
+      const list: Series[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as Series;
+        if (!deleted.has(item.id)) {
+          list.push(item);
+        }
+      });
 
-        // Sincronizar séries que estavam salvas apenas no notebook
-        list = await syncLocalCustomSeriesToCloud(list);
-
-        saveLocalSeries(list);
-        return list;
-      } else {
-        // Banco novo/vazio: faz o seed inicial com as séries locais/padrão
-        const seeded = await seedInitialSeriesToCloud();
-        saveLocalSeries(seeded);
-        return seeded;
-      }
+      saveLocalSeries(list);
+      return list;
     } catch (firestoreError) {
       console.warn('Firestore indisponível temporariamente, carregando dados locais:', firestoreError);
       return getLocalSeries();
@@ -167,7 +168,6 @@ export const api = {
   },
 
   async createSeries(data: Partial<Series>): Promise<Series> {
-    const localList = getLocalSeries();
     const newSeries: Series = {
       id: data.id || `series-${Date.now()}`,
       title: data.title || 'Sem Título',
@@ -182,67 +182,97 @@ export const api = {
       ageRating: data.ageRating || '14+',
       featured: Boolean(data.featured),
       createdAt: new Date().toISOString(),
-      episodes: data.episodes || [],
+      episodes: Array.isArray(data.episodes) ? data.episodes : [],
     };
+
+    const clean = sanitizeForFirestore(newSeries);
 
     // 1. Salvar no Firestore (Nuvem compartilhada entre todos os aparelhos)
     try {
-      await setDoc(doc(db, 'series', newSeries.id), newSeries);
+      await setDoc(doc(db, 'series', newSeries.id), clean);
     } catch (cloudErr) {
-      console.warn('Aviso: Falha ao salvar no Firestore, mantendo local:', cloudErr);
+      console.error('Erro ao salvar série no Firestore:', cloudErr);
     }
 
     // 2. Salvar localmente
-    localList.unshift(newSeries);
+    const localList = getLocalSeries();
+    localList.unshift(clean);
     saveLocalSeries(localList);
 
-    return newSeries;
+    return clean;
   },
 
   async updateSeries(id: string, data: Partial<Series>): Promise<Series> {
     const localList = getLocalSeries();
     const index = localList.findIndex((s) => s.id === id);
-    if (index === -1) throw new Error('Série não encontrada');
+    const existing = index !== -1 ? localList[index] : (await this.getSeriesById(id));
 
     const updated: Series = {
-      ...localList[index],
+      ...existing,
       ...data,
     };
 
+    const clean = sanitizeForFirestore(updated);
+
     // 1. Atualizar no Firestore
     try {
-      await setDoc(doc(db, 'series', id), updated, { merge: true });
+      await setDoc(doc(db, 'series', id), clean);
     } catch (cloudErr) {
-      console.warn('Aviso: Falha ao atualizar no Firestore:', cloudErr);
+      console.error('Erro ao atualizar no Firestore:', cloudErr);
     }
 
     // 2. Salvar localmente
-    localList[index] = updated;
+    if (index !== -1) {
+      localList[index] = clean;
+    } else {
+      localList.push(clean);
+    }
     saveLocalSeries(localList);
 
-    return updated;
+    return clean;
   },
 
   async deleteSeries(id: string): Promise<void> {
-    // 1. Excluir do Firestore
+    // 1. Registrar imediatamente como deletada para impedir retorno da série
+    markAsDeletedLocally(id);
+
+    // 2. Excluir permanentemente do Firestore
     try {
       await deleteDoc(doc(db, 'series', id));
     } catch (cloudErr) {
       console.warn('Aviso: Falha ao excluir do Firestore:', cloudErr);
     }
 
-    // 2. Atualizar localmente
+    // 3. Atualizar localmente
     const localList = getLocalSeries();
     const filtered = localList.filter((s) => s.id !== id);
     saveLocalSeries(filtered);
   },
 
   async addEpisode(seriesId: string, data: Partial<Episode>): Promise<Episode> {
-    const localList = getLocalSeries();
-    const seriesIndex = localList.findIndex((s) => s.id === seriesId);
-    if (seriesIndex === -1) throw new Error('Série não encontrada');
+    // 1. Buscar a série mais recente do Firestore para evitar conflito de estado
+    let series: Series | null = null;
+    try {
+      const docRef = doc(db, 'series', seriesId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        series = snap.data() as Series;
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar série no Firestore:', e);
+    }
 
-    const series = localList[seriesIndex];
+    if (!series) {
+      const localList = getLocalSeries();
+      series = localList.find((s) => s.id === seriesId) || null;
+    }
+
+    if (!series) throw new Error('Série não encontrada');
+
+    if (!Array.isArray(series.episodes)) {
+      series.episodes = [];
+    }
+
     const newEpisode: Episode = {
       id: data.id || `ep-${Date.now()}`,
       seriesId: series.id,
@@ -252,38 +282,67 @@ export const api = {
       description: data.description || '',
       sourceType: data.sourceType || 'web_url',
       videoUrl: data.videoUrl || '',
-      googleDriveId: data.googleDriveId,
-      downloadUrl: data.downloadUrl || data.videoUrl,
-      thumbnailUrl: data.thumbnailUrl || series.posterUrl,
+      googleDriveId: data.googleDriveId || undefined,
+      downloadUrl: data.downloadUrl || data.videoUrl || undefined,
+      thumbnailUrl: data.thumbnailUrl || series.posterUrl || undefined,
       durationMinutes: Number(data.durationMinutes) || 24,
       fileSizeBytes: data.fileSizeBytes ? Number(data.fileSizeBytes) : undefined,
-      fileSizeFormatted: data.fileSizeFormatted,
+      fileSizeFormatted: data.fileSizeFormatted || undefined,
       resolution: data.resolution || '1080p HD',
       createdAt: new Date().toISOString(),
     };
 
     series.episodes.push(newEpisode);
-    if (newEpisode.seasonNumber > series.totalSeasons) {
+    if (newEpisode.seasonNumber > (series.totalSeasons || 1)) {
       series.totalSeasons = newEpisode.seasonNumber;
     }
 
-    // 1. Atualizar a série com o novo episódio no Firestore
+    // Sanitizar todo o objeto da série removendo undefined antes de salvar no Firestore
+    const cleanSeries = sanitizeForFirestore(series);
+
+    // 1. Salvar no Firestore e aguardar confirmação
     try {
-      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
-    } catch (cloudErr) {
-      console.warn('Aviso: Falha ao adicionar episódio no Firestore:', cloudErr);
+      await setDoc(doc(db, 'series', seriesId), cleanSeries);
+    } catch (cloudErr: any) {
+      console.error('Erro crítico ao salvar episódio no Firestore:', cloudErr);
+      throw new Error('Falha ao salvar episódio na nuvem: ' + (cloudErr?.message || 'Erro desconhecido'));
     }
 
-    // 2. Salvar localmente
+    // 2. Salvar no cache local
+    const localList = getLocalSeries();
+    const seriesIndex = localList.findIndex((s) => s.id === seriesId);
+    if (seriesIndex !== -1) {
+      localList[seriesIndex] = cleanSeries;
+    } else {
+      localList.push(cleanSeries);
+    }
     saveLocalSeries(localList);
 
     return newEpisode;
   },
 
   async updateEpisode(seriesId: string, episodeId: string, data: Partial<Episode>): Promise<Episode> {
-    const localList = getLocalSeries();
-    const series = localList.find((s) => s.id === seriesId);
+    let series: Series | null = null;
+    try {
+      const docRef = doc(db, 'series', seriesId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        series = snap.data() as Series;
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar série para atualização:', e);
+    }
+
+    if (!series) {
+      const localList = getLocalSeries();
+      series = localList.find((s) => s.id === seriesId) || null;
+    }
+
     if (!series) throw new Error('Série não encontrada');
+
+    if (!Array.isArray(series.episodes)) {
+      series.episodes = [];
+    }
 
     const epIndex = series.episodes.findIndex((e) => e.id === episodeId);
     if (epIndex === -1) throw new Error('Episódio não encontrado');
@@ -294,35 +353,63 @@ export const api = {
     };
     series.episodes[epIndex] = updated;
 
+    const cleanSeries = sanitizeForFirestore(series);
+
     // 1. Atualizar no Firestore
     try {
-      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
-    } catch (cloudErr) {
-      console.warn('Aviso: Falha ao atualizar episódio no Firestore:', cloudErr);
+      await setDoc(doc(db, 'series', seriesId), cleanSeries);
+    } catch (cloudErr: any) {
+      console.error('Erro ao atualizar episódio no Firestore:', cloudErr);
+      throw new Error('Falha ao atualizar episódio na nuvem: ' + (cloudErr?.message || ''));
     }
 
     // 2. Salvar localmente
-    saveLocalSeries(localList);
+    const localList = getLocalSeries();
+    const sIndex = localList.findIndex((s) => s.id === seriesId);
+    if (sIndex !== -1) {
+      localList[sIndex] = cleanSeries;
+      saveLocalSeries(localList);
+    }
 
     return updated;
   },
 
   async deleteEpisode(seriesId: string, episodeId: string): Promise<void> {
-    const localList = getLocalSeries();
-    const series = localList.find((s) => s.id === seriesId);
+    let series: Series | null = null;
+    try {
+      const docRef = doc(db, 'series', seriesId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        series = snap.data() as Series;
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar série para exclusão de ep:', e);
+    }
+
+    if (!series) {
+      const localList = getLocalSeries();
+      series = localList.find((s) => s.id === seriesId) || null;
+    }
+
     if (!series) throw new Error('Série não encontrada');
 
-    series.episodes = series.episodes.filter((e) => e.id !== episodeId);
+    series.episodes = (series.episodes || []).filter((e) => e.id !== episodeId);
+    const cleanSeries = sanitizeForFirestore(series);
 
     // 1. Atualizar no Firestore
     try {
-      await setDoc(doc(db, 'series', seriesId), series, { merge: true });
+      await setDoc(doc(db, 'series', seriesId), cleanSeries);
     } catch (cloudErr) {
       console.warn('Aviso: Falha ao deletar episódio no Firestore:', cloudErr);
     }
 
     // 2. Salvar localmente
-    saveLocalSeries(localList);
+    const localList = getLocalSeries();
+    const sIndex = localList.findIndex((s) => s.id === seriesId);
+    if (sIndex !== -1) {
+      localList[sIndex] = cleanSeries;
+      saveLocalSeries(localList);
+    }
   },
 
   // --- UPLOAD DE ARQUIVO ---
@@ -432,10 +519,13 @@ export const api = {
   },
 
   async resetData(): Promise<void> {
+    // Limpar IDs marcados como deletados
+    localStorage.removeItem(DELETED_SERIES_STORAGE_KEY);
     saveLocalSeries(INITIAL_SERIES);
+
     for (const s of INITIAL_SERIES) {
       try {
-        await setDoc(doc(db, 'series', s.id), s);
+        await setDoc(doc(db, 'series', s.id), sanitizeForFirestore(s));
       } catch (e) {
         console.warn('Erro ao resetar no Firestore:', e);
       }
