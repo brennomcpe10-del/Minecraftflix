@@ -16,8 +16,6 @@ import {
   HardDrive,
   Globe,
   UploadCloud,
-  Layers,
-  Settings,
   Tv,
 } from 'lucide-react';
 import { Episode, Series } from '../types';
@@ -60,7 +58,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Ordenar todos os episódios da série por temporada e número
-  const allEpisodes = [...series.episodes].sort((a, b) => {
+  const allEpisodes = [...(series.episodes || [])].sort((a, b) => {
     if (a.seasonNumber !== b.seasonNumber) return a.seasonNumber - b.seasonNumber;
     return a.episodeNumber - b.episodeNumber;
   });
@@ -105,22 +103,78 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return () => clearInterval(interval);
   }, [episode.id, series.id, isWatched]);
 
-  // Esconder controles após inatividade
-  const handleMouseMove = () => {
+  // Sincronizar eventos de tela cheia do navegador e iOS WebKit
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const doc = document as any;
+      const isFs = !!(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+      setIsFullscreen(isFs);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    const video = videoRef.current;
+    const handleWebkitBegin = () => setIsFullscreen(true);
+    const handleWebkitEnd = () => setIsFullscreen(false);
+    if (video) {
+      video.addEventListener('webkitbeginfullscreen', handleWebkitBegin);
+      video.addEventListener('webkitendfullscreen', handleWebkitEnd);
+    }
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      if (video) {
+        video.removeEventListener('webkitbeginfullscreen', handleWebkitBegin);
+        video.removeEventListener('webkitendfullscreen', handleWebkitEnd);
+      }
+    };
+  }, []);
+
+  // Esconder controles após 3.5 segundos de inatividade
+  const triggerControlsVisibility = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying) setShowControls(false);
+      if (isPlaying) {
+        setShowControls(false);
+        setShowSpeedMenu(false);
+      }
     }, 3500);
   };
 
-  // Atalhos de teclado
+  const handleContainerMouseMove = () => {
+    triggerControlsVisibility();
+  };
+
+  // Toque na tela do celular: alternar visibilidade dos controles
+  const handleScreenTap = () => {
+    if (showControls && isPlaying) {
+      setShowControls(false);
+      setShowSpeedMenu(false);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    } else {
+      triggerControlsVisibility();
+    }
+  };
+
+  // Atalhos de teclado para desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.key === 'Escape') {
-        onClose();
+        if (isFullscreen) {
+          toggleFullscreen();
+        } else {
+          onClose();
+        }
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         togglePlay();
@@ -146,17 +200,22 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play();
-      setIsPlaying(true);
+      videoRef.current.play().then(() => {
+        setIsPlaying(true);
+        triggerControlsVisibility();
+      }).catch(console.warn);
     } else {
       videoRef.current.pause();
       setIsPlaying(false);
+      setShowControls(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     }
   };
 
   const skip = (seconds: number) => {
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration, videoRef.current.currentTime + seconds));
+    triggerControlsVisibility();
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,6 +224,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     if (videoRef.current) {
       videoRef.current.currentTime = time;
     }
+    triggerControlsVisibility();
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,14 +254,84 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       videoRef.current.playbackRate = rate;
     }
     setShowSpeedMenu(false);
+    triggerControlsVisibility();
   };
 
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(console.error);
+  // Alternar tela cheia com suporte cross-browser (Android, iOS Safari, desktop)
+  const toggleFullscreen = async () => {
+    const doc = document as any;
+    const isCurrentlyFs = !!(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement ||
+      isFullscreen
+    );
+
+    if (!isCurrentlyFs) {
+      // Tentar fullscreen padrão no container
+      const container = containerRef.current as any;
+      let requested = false;
+
+      if (container) {
+        if (container.requestFullscreen) {
+          try {
+            await container.requestFullscreen();
+            requested = true;
+          } catch (e) {
+            console.warn('requestFullscreen error, trying vendor prefixes', e);
+          }
+        } else if (container.webkitRequestFullscreen) {
+          try {
+            container.webkitRequestFullscreen();
+            requested = true;
+          } catch (e) {
+            console.warn('webkitRequestFullscreen error', e);
+          }
+        }
+      }
+
+      // Se falhou no container (comum no iOS iPhone Safari para tags div), tentar no elemento <video>
+      if (!requested && videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
+        try {
+          (videoRef.current as any).webkitEnterFullscreen();
+          requested = true;
+        } catch (e) {
+          console.warn('webkitEnterFullscreen error', e);
+        }
+      }
+
+      // Ativar estado de tela cheia CSS (garante que ocupa 100vw e 100vh em qualquer celular)
+      setIsFullscreen(true);
+
+      // Em dispositivos móveis, tentar travar em modo paisagem (landscape) se suportado
+      try {
+        if (window.screen?.orientation && typeof (window.screen.orientation as any).lock === 'function') {
+          await (window.screen.orientation as any).lock('landscape');
+        }
+      } catch {
+        // Ignora caso não tenha permissão de lock
+      }
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(console.error);
+      // Sair de tela cheia
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen().catch(() => {});
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        doc.mozCancelFullScreen();
+      }
+
+      setIsFullscreen(false);
+
+      // Desbloquear orientação de tela
+      try {
+        if (window.screen?.orientation && typeof (window.screen.orientation as any).unlock === 'function') {
+          (window.screen.orientation as any).unlock();
+        }
+      } catch {
+        // Ignora
+      }
     }
   };
 
@@ -243,70 +373,69 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="fixed inset-0 z-50 bg-black flex flex-col justify-between select-none overflow-hidden"
+      onMouseMove={handleContainerMouseMove}
+      className={`fixed inset-0 z-[9999] bg-black flex flex-col justify-between select-none overflow-hidden ${
+        isFullscreen ? 'w-screen h-screen' : ''
+      }`}
       id="video-player-container"
     >
-      {/* Top Header Controls Bar */}
+      {/* Barra de Controles Superior com suporte a Safe-Area no celular */}
       <div
-        className={`absolute top-0 left-0 right-0 z-30 bg-gradient-to-b from-[#0A0A0B]/95 via-[#0A0A0B]/70 to-transparent p-4 sm:p-6 flex items-center justify-between gap-4 transition-opacity duration-300 border-b border-white/5 ${
+        className={`absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-[#0A0A0B]/95 via-[#0A0A0B]/80 to-transparent pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 px-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] flex items-center justify-between gap-2 sm:gap-4 transition-opacity duration-300 border-b border-white/5 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Series & Episode Info */}
-        <div className="flex items-center gap-3 min-w-0">
+        {/* Identificação da Série e Episódio */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10 backdrop-blur-md"
+            className="p-2 sm:p-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 text-white transition-colors border border-white/10 backdrop-blur-md flex-shrink-0"
             title="Fechar player (Esc)"
             id="player-close-btn"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-blue-400 bg-blue-600/10 px-2 py-0.5 rounded border border-blue-500/20">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] sm:text-xs font-bold text-blue-400 bg-blue-600/20 px-1.5 sm:px-2 py-0.5 rounded border border-blue-500/30">
                 {episodeCode}
               </span>
-              <span className="text-xs font-medium text-white/50 truncate hidden sm:inline">
+              <span className="text-xs font-medium text-white/50 truncate max-w-[120px] sm:max-w-none">
                 {series.title}
               </span>
             </div>
-            <h2 className="text-sm sm:text-base font-bold text-white truncate drop-shadow-md">
+            <h2 className="text-xs sm:text-base font-bold text-white truncate drop-shadow-md">
               {episode.title}
             </h2>
           </div>
         </div>
 
-        {/* Technical Data & Smart Nav */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          {/* Transmission Source Indicator */}
-          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#171719]/80 border border-white/5 text-xs backdrop-blur-md">
-            {episode.sourceType === 'google_drive' ? (
-              <>
-                <HardDrive className="w-3.5 h-3.5 text-amber-400" />
-                <span className="font-bold text-amber-300">Transmissão: Google Drive HD</span>
-              </>
-            ) : episode.sourceType === 'direct_upload' ? (
-              <>
-                <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="font-bold text-cyan-300">Transmissão: Upload Servidor</span>
-              </>
-            ) : (
-              <>
-                <Globe className="w-3.5 h-3.5 text-blue-400" />
-                <span className="font-bold text-blue-300">Transmissão: Link Web</span>
-              </>
-            )}
-          </div>
+        {/* Ações Rápidas no Topo */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Alternador de Modo (Player Google Drive vs HTML5 Direto) */}
+          {episode.sourceType === 'google_drive' && (
+            <button
+              onClick={() =>
+                setActivePlayerMode(activePlayerMode === 'drive_iframe' ? 'native_player' : 'drive_iframe')
+              }
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/10 text-white text-xs font-medium transition-colors"
+              title="Alternar entre Player Oficial Google Drive e Player HTML5 Direto"
+              id="player-toggle-mode-btn"
+            >
+              <Tv className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">
+                {activePlayerMode === 'drive_iframe' ? 'Usar Player Direto' : 'Usar Google Drive'}
+              </span>
+            </button>
+          )}
 
-          {/* Previous / Next Episode Smart Navigation Buttons */}
-          <div className="flex items-center gap-1.5">
+          {/* Botões de Episódio Anterior / Próximo */}
+          <div className="flex items-center gap-1">
             <button
               onClick={() => prevEpisode && onSelectEpisode(prevEpisode)}
               disabled={!prevEpisode}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center justify-center p-2 sm:px-3 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
                 prevEpisode
                   ? 'bg-white/10 hover:bg-white/20 text-white border border-white/10 cursor-pointer'
                   : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
@@ -314,14 +443,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               title={prevEpisode ? `Episódio Anterior: ${prevEpisode.title}` : 'Primeiro episódio'}
               id="player-prev-episode-btn"
             >
-              <SkipBack className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Anterior</span>
+              <SkipBack className="w-4 h-4" />
+              <span className="hidden md:inline ml-1">Anterior</span>
             </button>
 
             <button
               onClick={() => nextEpisode && onSelectEpisode(nextEpisode)}
               disabled={!nextEpisode}
-              className={`flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center justify-center p-2 sm:px-3.5 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
                 nextEpisode
                   ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20 cursor-pointer'
                   : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
@@ -329,38 +458,40 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               title={nextEpisode ? `Próximo Episódio: ${nextEpisode.title}` : 'Último episódio'}
               id="player-next-episode-btn"
             >
-              <span className="hidden sm:inline">Próximo</span>
-              <SkipForward className="w-3.5 h-3.5" />
+              <span className="hidden md:inline mr-1">Próximo</span>
+              <SkipForward className="w-4 h-4" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Video Viewport */}
-      <div className="relative flex-1 w-full h-full flex items-center justify-center bg-black">
-        {/* Mode A: Google Drive Preview Player (Iframe) */}
+      {/* Área Principal de Exibição do Vídeo (Viewport) */}
+      <div
+        onClick={handleScreenTap}
+        className="relative flex-1 w-full h-full flex items-center justify-center bg-black overflow-hidden"
+      >
+        {/* MODO 1: Google Drive Iframe Oficial */}
         {activePlayerMode === 'drive_iframe' && driveEmbedUrl ? (
           <div className="relative w-full h-full flex flex-col items-center justify-center">
             <iframe
               src={driveEmbedUrl}
               title={episode.title}
               className="w-full h-full border-0"
-              allow="autoplay; encrypted-media; fullscreen"
+              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
               allowFullScreen
             />
           </div>
         ) : (
-          /* Mode B: HTML5 Video Player */
-          <div
-            onClick={togglePlay}
-            className="relative w-full h-full flex items-center justify-center cursor-pointer"
-          >
+          /* MODO 2: Player HTML5 Nativo com Controles Otimizados para Celular */
+          <div className="relative w-full h-full flex items-center justify-center">
             <video
               ref={videoRef}
               src={episode.videoUrl}
               poster={episode.thumbnailUrl || series.posterUrl}
               className="max-w-full max-h-full w-full h-full object-contain"
               playsInline
+              webkit-playsinline="true"
+              x5-playsinline="true"
               onTimeUpdate={() => {
                 if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
               }}
@@ -374,83 +505,128 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   onSelectEpisode(nextEpisode);
                 }
               }}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
             />
 
-            {/* Center Play/Pause Overlay Animation */}
-            {!isPlaying && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
-                <div className="w-20 h-20 rounded-full bg-blue-600/90 text-white flex items-center justify-center shadow-2xl backdrop-blur-sm transform scale-100 transition-transform">
-                  <Play className="w-8 h-8 fill-current translate-x-1" />
-                </div>
-              </div>
-            )}
+            {/* Controles Centrais em Tela Cheia e Mobile (Estilo Netflix / YouTube) */}
+            <div
+              className={`absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 transition-opacity duration-300 pointer-events-none ${
+                showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              {/* Botão Voltar 10s */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  skip(-10);
+                }}
+                className="pointer-events-auto p-3 sm:p-4 rounded-full bg-black/50 hover:bg-black/80 active:scale-95 text-white/90 hover:text-white backdrop-blur-md border border-white/10 transition-all shadow-xl"
+                title="Voltar 10 segundos"
+              >
+                <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
+                <span className="text-[9px] font-bold block mt-0.5">-10s</span>
+              </button>
+
+              {/* Botão Play / Pause Central */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePlay();
+                }}
+                className="pointer-events-auto w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-blue-600/95 hover:bg-blue-500 active:scale-95 text-white flex items-center justify-center shadow-2xl backdrop-blur-sm transition-all"
+                title={isPlaying ? 'Pausar' : 'Reproduzir'}
+                id="center-play-pause-btn"
+              >
+                {isPlaying ? (
+                  <Pause className="w-7 h-7 sm:w-9 sm:h-9 fill-current" />
+                ) : (
+                  <Play className="w-7 h-7 sm:w-9 sm:h-9 fill-current translate-x-0.5" />
+                )}
+              </button>
+
+              {/* Botão Avançar 10s */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  skip(10);
+                }}
+                className="pointer-events-auto p-3 sm:p-4 rounded-full bg-black/50 hover:bg-black/80 active:scale-95 text-white/90 hover:text-white backdrop-blur-md border border-white/10 transition-all shadow-xl"
+                title="Avançar 10 segundos"
+              >
+                <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
+                <span className="text-[9px] font-bold block mt-0.5">+10s</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Bottom Controls Bar */}
+      {/* Barra de Controles Inferior (Otimizada para Mobile e Telas Cheias) */}
       <div
-        className={`absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-[#0A0A0B]/95 via-[#0A0A0B]/85 to-transparent p-4 sm:p-6 transition-opacity duration-300 border-t border-white/5 ${
+        className={`absolute bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-[#0A0A0B]/95 via-[#0A0A0B]/85 to-transparent pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] px-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] transition-opacity duration-300 border-t border-white/5 ${
           showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Timeline Scrubber (Only active in HTML5 video mode) */}
+        {/* Barra de Progresso / Linha do Tempo (Scrubber) */}
         {activePlayerMode === 'native_player' && (
-          <div className="mb-3 flex items-center gap-3">
-            <span className="text-xs font-mono text-white/70 min-w-[45px]">
+          <div className="mb-2 sm:mb-3 flex items-center gap-2 sm:gap-3">
+            <span className="text-[11px] sm:text-xs font-mono text-white/70 min-w-[38px] text-right">
               {formatTime(currentTime)}
             </span>
             <input
               type="range"
               min={0}
               max={duration || 100}
+              step={0.1}
               value={currentTime}
               onChange={handleSeek}
-              className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:h-2 transition-all"
+              className="player-scrubber flex-1 cursor-pointer"
+              id="player-timeline-slider"
             />
-            <span className="text-xs font-mono text-white/40 min-w-[45px]">
+            <span className="text-[11px] sm:text-xs font-mono text-white/40 min-w-[38px]">
               {formatTime(duration || episode.durationMinutes * 60)}
             </span>
           </div>
         )}
 
-        {/* Action Controls Line */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          {/* Left Controls: Play/Pause, Skip, Volume */}
-          <div className="flex items-center gap-2 sm:gap-3">
+        {/* Linha de Ações Principais do Player */}
+        <div className="flex items-center justify-between gap-1.5 sm:gap-3">
+          {/* Controles da Esquerda */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             {activePlayerMode === 'native_player' && (
               <>
                 <button
                   onClick={togglePlay}
-                  className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-600/20"
-                  title={isPlaying ? 'Pausar (Espaço)' : 'Reproduzir (Espaço)'}
+                  className="p-2 sm:p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white transition-colors shadow-lg shadow-blue-600/20 flex-shrink-0"
+                  title={isPlaying ? 'Pausar' : 'Reproduzir'}
                   id="player-play-toggle-btn"
                 >
-                  {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current translate-x-0.5" />}
+                  {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current translate-x-0.5" />}
                 </button>
 
                 <button
                   onClick={() => skip(-10)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors"
-                  title="Voltar 10s (←)"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 text-white border border-white/10 transition-colors hidden xs:flex items-center justify-center"
+                  title="Voltar 10s"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                 </button>
 
                 <button
                   onClick={() => skip(10)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors"
-                  title="Avançar 10s (→)"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 text-white border border-white/10 transition-colors hidden xs:flex items-center justify-center"
+                  title="Avançar 10s"
                 >
-                  <RotateCw className="w-4 h-4" />
+                  <RotateCw className="w-3.5 h-3.5" />
                 </button>
 
-                {/* Volume Slider */}
-                <div className="flex items-center gap-1.5 group">
+                {/* Controle de Volume (Oculto no celular onde botões físicos são usados) */}
+                <div className="hidden sm:flex items-center gap-1.5 group ml-1">
                   <button
                     onClick={toggleMute}
                     className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-colors"
-                    title={isMuted ? 'Ativar som (M)' : 'Silenciar (M)'}
+                    title={isMuted ? 'Ativar som' : 'Silenciar'}
                   >
                     {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
                   </button>
@@ -461,64 +637,36 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     step={0.05}
                     value={isMuted ? 0 : volume}
                     onChange={handleVolumeChange}
-                    className="w-16 sm:w-24 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    className="w-16 sm:w-20 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
                   />
                 </div>
               </>
             )}
 
-            {/* Watched Status Toggle in Player */}
+            {/* Marcar como Assistido */}
             <button
               onClick={() => onToggleWatched(episode.id)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0 ${
                 isWatched
-                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                   : 'bg-white/10 hover:bg-white/20 border border-white/10 text-white/80'
               }`}
+              title={isWatched ? 'Episódio já assistido' : 'Marcar como assistido'}
               id="player-mark-watched-btn"
             >
-              <Check className={`w-4 h-4 ${isWatched ? 'text-emerald-400 stroke-[3]' : 'text-white/40'}`} />
-              <span>{isWatched ? 'Assistido' : 'Marcar como Assistido'}</span>
+              <Check className={`w-3.5 h-3.5 ${isWatched ? 'text-emerald-400 stroke-[3]' : 'text-white/40'}`} />
+              <span className="hidden sm:inline">{isWatched ? 'Assistido' : 'Marcar Assistido'}</span>
             </button>
-
-            {/* Toggle Player Engine (If Google Drive) */}
-            {episode.sourceType === 'google_drive' && (
-              <button
-                onClick={() =>
-                  setActivePlayerMode(activePlayerMode === 'drive_iframe' ? 'native_player' : 'drive_iframe')
-                }
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white/80 text-xs font-medium transition-colors"
-                title="Alternar entre Player Oficial Google Drive e Player HTML5 Direto"
-              >
-                <Tv className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">
-                  {activePlayerMode === 'drive_iframe' ? 'Mudar para Player Direto' : 'Mudar para Google Drive'}
-                </span>
-              </button>
-            )}
           </div>
 
-          {/* Right Controls: Technical Specs, Speed, Download, Fullscreen */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Technical Specs Info */}
-            <div className="hidden sm:flex items-center gap-2 text-xs text-white/60 bg-[#171719]/80 px-3 py-1.5 rounded-xl border border-white/5 backdrop-blur-sm">
-              <span className="font-bold text-blue-400">{episode.resolution || '1080p HD'}</span>
-              <span>•</span>
-              <span>{episode.durationMinutes} min</span>
-              {episode.fileSizeFormatted && (
-                <>
-                  <span>•</span>
-                  <span>{episode.fileSizeFormatted}</span>
-                </>
-              )}
-            </div>
-
-            {/* Playback Speed Menu */}
+          {/* Controles da Direita: Velocidade, Download, Tela Cheia */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Seletor de Velocidade (Player HTML5) */}
             {activePlayerMode === 'native_player' && (
               <div className="relative">
                 <button
                   onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-bold transition-colors"
+                  className="px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/10 text-white text-xs font-bold transition-colors"
                   title="Velocidade de reprodução"
                 >
                   {playbackRate}x
@@ -541,21 +689,21 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               </div>
             )}
 
-            {/* Direct Download Button */}
+            {/* Botão de Download */}
             <button
               onClick={handleDownload}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-black hover:bg-blue-400 text-xs font-bold shadow-lg transition-all hover:scale-105 active:scale-95"
-              title="Baixar vídeo original no seu dispositivo"
+              className="inline-flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white text-black hover:bg-blue-400 text-xs font-bold shadow-md transition-all active:scale-95 flex-shrink-0"
+              title="Baixar arquivo de vídeo original"
               id="player-download-btn"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Baixar Vídeo</span>
+              <span className="hidden md:inline">Baixar</span>
             </button>
 
-            {/* Fullscreen Button */}
+            {/* Botão de Tela Cheia */}
             <button
               onClick={toggleFullscreen}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white transition-colors"
+              className="p-2 sm:p-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/10 text-white transition-colors flex-shrink-0"
               title={isFullscreen ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
               id="player-fullscreen-btn"
             >

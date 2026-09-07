@@ -17,7 +17,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenNewSeriesModal,
 }) => {
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0A0A0B]/90 backdrop-blur-md border-t border-white/5 px-2 py-2 flex items-center justify-around safe-area-bottom">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0A0A0B]/95 backdrop-blur-md border-t border-white/5 px-2 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] flex items-center justify-around">
       <button
         onClick={() => onSelectView('home')}
         className={`flex flex-col items-center justify-center py-1 px-3 rounded-lg text-[11px] transition-colors ${

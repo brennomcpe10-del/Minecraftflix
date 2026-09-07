@@ -101,10 +101,10 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-start justify-center p-2 sm:p-4 md:p-6 animate-fadeIn">
-      <div className="relative w-full max-w-5xl rounded-3xl bg-[#0F0F11] border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md flex items-stretch sm:items-start justify-center p-0 sm:p-4 md:p-6 animate-fadeIn">
+      <div className="relative w-full max-w-5xl rounded-none sm:rounded-3xl bg-[#0F0F11] border-0 sm:border sm:border-white/10 shadow-2xl overflow-hidden min-h-screen sm:min-h-0 sm:my-auto sm:max-h-[92vh] flex flex-col">
         {/* Header with Backdrop Banner */}
-        <div className="relative w-full aspect-[21/9] sm:aspect-[24/8] min-h-[220px] max-h-[300px] overflow-hidden flex-shrink-0">
+        <div className="relative w-full aspect-[16/9] sm:aspect-[24/8] min-h-[220px] sm:min-h-[260px] max-h-[340px] overflow-hidden flex-shrink-0">
           <img
             src={series.bannerUrl || series.posterUrl}
             alt={series.title}
@@ -114,19 +114,20 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-[#0F0F11] via-[#0F0F11]/60 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0F0F11] via-[#0F0F11]/70 to-transparent" />
 
-          {/* Close button */}
+          {/* Close button with safe-area support */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 z-20 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/10"
+            className="absolute top-[max(0.75rem,env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))] z-30 p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors border border-white/15 backdrop-blur-md shadow-lg active:scale-95"
             id="series-modal-close-btn"
+            title="Fechar detalhes"
           >
             <X className="w-5 h-5" />
           </button>
 
           {/* Header Content */}
-          <div className="absolute bottom-4 left-4 right-4 sm:left-8 sm:right-8 z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-2">
+          <div className="absolute bottom-4 left-4 right-4 sm:left-8 sm:right-8 z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-3 sm:gap-4">
+            <div className="max-w-xl">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-2">
                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500 text-black shadow-sm uppercase tracking-wider">
                   {series.ageRating}
                 </span>
@@ -142,22 +143,22 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
                 </span>
               </div>
 
-              <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-md">
+              <h2 className="text-xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow-md">
                 {series.title}
               </h2>
               {series.originalTitle && (
-                <p className="text-xs sm:text-sm text-white/50 italic">
+                <p className="text-xs sm:text-sm text-white/50 italic mt-0.5">
                   {series.originalTitle}
                 </p>
               )}
             </div>
 
             {/* Quick Play CTA */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               {(series.episodes || []).length > 0 && (
                 <button
                   onClick={handlePlayFirstUnwatched}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black hover:bg-blue-400 font-bold text-sm shadow-lg transition-colors hover:scale-105"
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-white text-black hover:bg-blue-400 font-bold text-xs sm:text-sm shadow-lg transition-all hover:scale-105 active:scale-95"
                   id="series-play-unwatched-btn"
                 >
                   <Play className="w-4 h-4 fill-current" />
