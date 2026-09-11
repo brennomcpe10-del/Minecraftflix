@@ -1,14 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Play,
-  Pause,
-  Volume2,
-  VolumeX,
   Maximize2,
   Minimize2,
-  RotateCcw,
-  RotateCw,
   SkipBack,
   SkipForward,
   Download,
@@ -17,7 +12,6 @@ import {
   HardDrive,
   Globe,
   UploadCloud,
-  Tv,
   ArrowLeft,
   Film,
   Search,
@@ -25,7 +19,11 @@ import {
   Layers,
 } from 'lucide-react';
 import { Episode, Series } from '../types';
-import { formatEpisodeCode, getGoogleDriveDownloadUrl, getGoogleDrivePreviewUrl, getEpisodeSourceUrl } from '../utils/drive';
+import {
+  formatEpisodeCode,
+  getEpisodeSourceUrl,
+  getEpisodeDrivePreviewUrl,
+} from '../utils/drive';
 import { api } from '../services/api';
 import { EpisodeCard } from './EpisodeCard';
 
@@ -66,14 +64,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
     if (typeof document !== 'undefined') {
       const doc = document as any;
@@ -81,50 +72,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         return true;
       }
     }
-    return true; // O player abre diretamente em tela cheia por padrão
+    return false;
   });
-  const [showControls, setShowControls] = useState(true);
-  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [activePlayerMode, setActivePlayerMode] = useState<'drive_iframe' | 'native_player'>('native_player');
 
   // Filtros de Episódios na lista inferior
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [watchedFilter, setWatchedFilter] = useState<'all' | 'unwatched' | 'watched'>('all');
-
-  // Estado centralizado para controle de visibilidade da barra de controles
-  const [isDraggingSlider, setIsDraggingSlider] = useState(false);
-  const isDraggingSliderRef = useRef(false);
-  isDraggingSliderRef.current = isDraggingSlider;
-  const lastTapTimeRef = useRef(0);
-  const controlsTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Limpar timer de ocultação existente
-  const clearControlsTimer = useCallback(() => {
-    if (controlsTimerRef.current) {
-      clearTimeout(controlsTimerRef.current);
-      controlsTimerRef.current = null;
-    }
-  }, []);
-
-  // Agendar desaparecimento dos controles após 3 segundos
-  const scheduleControlsHide = useCallback((delay = 3000) => {
-    clearControlsTimer();
-    controlsTimerRef.current = setTimeout(() => {
-      // Se o vídeo estiver pausado ou usuário interagindo com a barra de progresso, não esconder
-      if (videoRef.current?.paused || isDraggingSliderRef.current) {
-        return;
-      }
-      setShowControls(false);
-      setShowSpeedMenu(false);
-    }, delay);
-  }, [clearControlsTimer]);
-
-  // Mostrar controles e agendar desaparecimento automático em 3 segundos
-  const showAndScheduleHide = useCallback((delay = 3000) => {
-    setShowControls(true);
-    scheduleControlsHide(delay);
-  }, [scheduleControlsHide]);
 
   // Ordenar todos os episódios da série por temporada e número
   const allEpisodes = [...(series.episodes || [])].sort((a, b) => {
@@ -167,74 +121,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   // Outras séries recomendadas do catálogo (excluindo a série atual)
   const otherSeries = allSeries.filter((s) => s.id !== series.id);
 
-  // Manter player nativo ativo com a mesma fonte do download ao trocar de episódio
+  // Rolar ao topo e registrar abertura do episódio
   useEffect(() => {
-    setActivePlayerMode('native_player');
-    
-    // Assegurar tela cheia caso o navegador suporte
-    const doc = document as any;
-    const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
-    if (!isFs && playerContainerRef.current) {
-      const el = playerContainerRef.current as any;
-      if (el.requestFullscreen) {
-        el.requestFullscreen().catch(() => {});
-      } else if (el.webkitRequestFullscreen) {
-        el.webkitRequestFullscreen();
-      }
-    }
-  }, [episode.id]);
-
-  // Carregar progresso salvo e iniciar reprodução imediata do episódio
-  useEffect(() => {
-    const progressMap = api.getProgressMap();
-    const saved = progressMap[episode.id];
-    if (videoRef.current) {
-      if (saved && saved.currentTimeSeconds > 0) {
-        videoRef.current.currentTime = saved.currentTimeSeconds;
-      } else {
-        videoRef.current.currentTime = 0;
-      }
-
-      // Iniciar reprodução do vídeo imediatamente sem necessitar de segundo clique
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            setIsPlaying(true);
-            showAndScheduleHide(3000);
-          })
-          .catch((err) => {
-            console.warn('Autoplay aguardando interação do usuário:', err);
-            setShowControls(true);
-          });
-      }
-    }
-
-    // Rolar suavemente a visualização para o topo do reprodutor
+    api.saveProgress(
+      episode.id,
+      series.id,
+      isWatched,
+      0,
+      (episode.durationMinutes || 24) * 60
+    );
     containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-
-    return () => {
-      clearControlsTimer();
-    };
-  }, [episode.id, clearControlsTimer, showAndScheduleHide]);
-
-  // Salvar progresso de reprodução periodicamente
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (videoRef.current && !videoRef.current.paused) {
-        api.saveProgress(
-          episode.id,
-          series.id,
-          isWatched,
-          videoRef.current.currentTime,
-          videoRef.current.duration || 0
-        );
-      }
-    }, 5000);
-    return () => clearInterval(interval);
   }, [episode.id, series.id, isWatched]);
 
-  // Sincronizar eventos de tela cheia do navegador e iOS WebKit
+  // Sincronizar eventos de tela cheia do navegador
   useEffect(() => {
     const handleFullscreenChange = () => {
       const doc = document as any;
@@ -250,85 +149,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
-    const video = videoRef.current;
-    const handleWebkitBegin = () => setIsFullscreen(true);
-    const handleWebkitEnd = () => setIsFullscreen(false);
-    if (video) {
-      video.addEventListener('webkitbeginfullscreen', handleWebkitBegin);
-      video.addEventListener('webkitendfullscreen', handleWebkitEnd);
-    }
-
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      if (video) {
-        video.removeEventListener('webkitbeginfullscreen', handleWebkitBegin);
-        video.removeEventListener('webkitendfullscreen', handleWebkitEnd);
-      }
     };
   }, []);
-
-  // Movimento de mouse no desktop: mostrar controles e agendar auto-hide
-  const handlePlayerMouseMove = () => {
-    if (!showControls) {
-      setShowControls(true);
-    }
-    if (isPlaying && !isDraggingSliderRef.current) {
-      scheduleControlsHide(3000);
-    }
-  };
-
-  const handlePlayerMouseLeave = () => {
-    if (isPlaying && !isDraggingSliderRef.current) {
-      clearControlsTimer();
-      setShowControls(false);
-      setShowSpeedMenu(false);
-    }
-  };
-
-  // Toque na área do player: alternar visibilidade sem piscar e sem disparos múltiplos
-  const handlePlayerTap = (e: React.MouseEvent | React.TouchEvent) => {
-    const now = Date.now();
-    if (now - lastTapTimeRef.current < 300) {
-      return; // Prevenir disparo duplicado (touch + click no mobile)
-    }
-    lastTapTimeRef.current = now;
-
-    // Se o clique foi em um elemento interativo (botão, slider, etc), renovar tempo dos controles
-    const target = e.target as HTMLElement | null;
-    if (target && target.closest('button, input, select, a, .player-scrubber')) {
-      if (isPlaying && !isDraggingSliderRef.current) {
-        scheduleControlsHide(3000);
-      }
-      return;
-    }
-
-    if (showControls && isPlaying) {
-      // Controles estavam visíveis durante a reprodução: toque esconde imediatamente
-      clearControlsTimer();
-      setShowControls(false);
-      setShowSpeedMenu(false);
-    } else {
-      // Controles estavam ocultos: toque mostra e programa auto-hide em aproximadamente 3 segundos
-      showAndScheduleHide(3000);
-    }
-  };
-
-  // Manipuladores de arraste da linha do tempo para NUNCA ocultar enquanto arrasta
-  const handleSliderDragStart = () => {
-    setIsDraggingSlider(true);
-    isDraggingSliderRef.current = true;
-    clearControlsTimer();
-    setShowControls(true);
-  };
-
-  const handleSliderDragEnd = () => {
-    setIsDraggingSlider(false);
-    isDraggingSliderRef.current = false;
-    if (isPlaying) {
-      scheduleControlsHide(3000);
-    }
-  };
 
   // Atalhos de teclado para desktop
   useEffect(() => {
@@ -341,108 +166,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         } else {
           onClose();
         }
-      } else if (e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        togglePlay();
       } else if (e.key === 'f' || e.key === 'F') {
         e.preventDefault();
         toggleFullscreen();
-      } else if (e.key === 'm' || e.key === 'M') {
-        e.preventDefault();
-        toggleMute();
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        skip(10);
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        skip(-10);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, isFullscreen, isMuted]);
+  }, [isFullscreen, onClose]);
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-          showAndScheduleHide(3000);
-        })
-        .catch(console.warn);
-    } else {
-      videoRef.current.pause();
-      setIsPlaying(false);
-      clearControlsTimer();
-      setShowControls(true);
-    }
-  };
-
-  const skip = (seconds: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = Math.max(
-      0,
-      Math.min(videoRef.current.duration || 0, videoRef.current.currentTime + seconds)
-    );
-    showAndScheduleHide(3000);
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = parseFloat(e.target.value);
-    setCurrentTime(time);
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-    }
-    showAndScheduleHide(3000);
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setVolume(val);
-    if (videoRef.current) {
-      videoRef.current.volume = val;
-      setIsMuted(val === 0);
-    }
-    showAndScheduleHide(3000);
-  };
-
-  const toggleMute = () => {
-    if (!videoRef.current) return;
-    if (isMuted) {
-      videoRef.current.muted = false;
-      setIsMuted(false);
-      videoRef.current.volume = volume || 0.5;
-    } else {
-      videoRef.current.muted = true;
-      setIsMuted(true);
-    }
-    showAndScheduleHide(3000);
-  };
-
-  const changeSpeed = (rate: number) => {
-    setPlaybackRate(rate);
-    if (videoRef.current) {
-      videoRef.current.playbackRate = rate;
-    }
-    setShowSpeedMenu(false);
-    showAndScheduleHide(3000);
-  };
-
-  // Detecção de iPhone / iPad / iPod
-  const isIosDevice = () => {
-    return (
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    );
-  };
-
-  // Alternar tela cheia com suporte cross-browser robusto (iOS Safari, Android Chrome, Desktop)
+  // Alternar tela cheia com suporte cross-browser
   const toggleFullscreen = async () => {
     const doc = document as any;
-    const video = videoRef.current as any;
     const playerContainer = playerContainerRef.current as any;
 
     const isCurrentlyFs = !!(
@@ -450,73 +186,27 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       doc.webkitFullscreenElement ||
       doc.mozFullScreenElement ||
       doc.msFullscreenElement ||
-      video?.webkitDisplayingFullscreen ||
       isFullscreen
     );
 
     if (!isCurrentlyFs) {
-      // 1. Prioridade no iPhone Safari: webkitEnterFullscreen diretamente no elemento <video>
-      if (video && typeof video.webkitEnterFullscreen === 'function' && isIosDevice()) {
-        try {
-          video.webkitEnterFullscreen();
-          setIsFullscreen(true);
-          return;
-        } catch (err) {
-          console.warn('Erro ao chamar webkitEnterFullscreen:', err);
-        }
-      }
-
-      // 2. Android Chrome / Desktop: requestFullscreen no container do player
-      let requested = false;
       if (playerContainer) {
         if (playerContainer.requestFullscreen) {
           try {
             await playerContainer.requestFullscreen();
-            requested = true;
           } catch (e) {
-            console.warn('requestFullscreen error, trying vendor prefixes', e);
+            console.warn('requestFullscreen error', e);
           }
         } else if (playerContainer.webkitRequestFullscreen) {
           try {
             playerContainer.webkitRequestFullscreen();
-            requested = true;
           } catch (e) {
             console.warn('webkitRequestFullscreen error', e);
           }
-        } else if (playerContainer.mozRequestFullScreen) {
-          try {
-            playerContainer.mozRequestFullScreen();
-            requested = true;
-          } catch (e) {
-            console.warn('mozRequestFullScreen error', e);
-          }
         }
       }
-
-      // 3. Fallback no elemento <video> caso o container tenha sido rejeitado
-      if (!requested && video && typeof video.webkitEnterFullscreen === 'function') {
-        try {
-          video.webkitEnterFullscreen();
-          requested = true;
-        } catch (e) {
-          console.warn('Fallback webkitEnterFullscreen falhou:', e);
-        }
-      }
-
-      // Ativar estado de tela cheia CSS (garante 100vw e 100vh em qualquer dispositivo)
       setIsFullscreen(true);
-      showAndScheduleHide(3000);
-
-      // No Android / navegadores compatíveis: tentar travar orientação horizontal (landscape)
-      try {
-        if (window.screen?.orientation && typeof (window.screen.orientation as any).lock === 'function') {
-          await (window.screen.orientation as any).lock('landscape');
-        }
-      } catch {
-        // Ignora caso não tenha permissão de lock
-      }
     } else {
-      // SAIR DE TELA CHEIA
       try {
         if (doc.exitFullscreen) {
           await doc.exitFullscreen().catch(() => {});
@@ -528,36 +218,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       } catch (err) {
         console.warn('Erro ao sair de tela cheia:', err);
       }
-
-      if (video && typeof video.webkitExitFullscreen === 'function') {
-        try {
-          video.webkitExitFullscreen();
-        } catch {}
-      }
-
       setIsFullscreen(false);
-      showAndScheduleHide(3000);
-
-      // Desbloquear orientação de tela
-      try {
-        if (window.screen?.orientation && typeof (window.screen.orientation as any).unlock === 'function') {
-          (window.screen.orientation as any).unlock();
-        }
-      } catch {
-        // Ignora
-      }
     }
   };
 
-  const formatTime = (sec: number) => {
-    if (isNaN(sec) || sec <= 0) return '00:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
-
   // Fonte oficial do episódio compartilhada entre o Player e o Download
-  const episodeMediaUrl = getEpisodeSourceUrl(episode) || episode.videoUrl;
   const getDownloadUrl = () => getEpisodeSourceUrl(episode);
 
   const handleDownload = () => {
@@ -573,12 +238,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     document.body.removeChild(a);
   };
 
-  // Google Drive preview URL
-  const driveEmbedUrl = episode.googleDriveId
-    ? getGoogleDrivePreviewUrl(episode.googleDriveId)
-    : episode.sourceType === 'google_drive'
-    ? episode.videoUrl
-    : '';
+  // Google Drive preview URL oficial
+  const driveEmbedUrl = getEpisodeDrivePreviewUrl(episode);
 
   return (
     <div
@@ -631,324 +292,73 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. PLAYER DE VÍDEO (No topo, aspect-video, com grande botão de Fullscreen) */}
+      {/* 2. PLAYER DE VÍDEO GOOGLE DRIVE */}
       {/* ========================================================================= */}
       <div className={`w-full bg-black ${isFullscreen ? 'fixed inset-0 z-[99999] h-screen' : 'relative'}`}>
         <div
           ref={playerContainerRef}
-          onMouseMove={handlePlayerMouseMove}
-          onMouseLeave={handlePlayerMouseLeave}
           className={`relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden transition-all ${
-            !showControls && isPlaying ? 'cursor-none' : 'cursor-default'
-          } ${
             isFullscreen
               ? 'fixed inset-0 z-[99999] w-screen h-screen max-w-none aspect-auto'
               : 'max-w-5xl mx-auto shadow-2xl'
           }`}
           id="video-player-viewport"
         >
-          {/* Top Bar inside Player (Overlaid controls) */}
-          <div
-            className={`absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-black/90 via-black/60 to-transparent pt-3 pb-6 px-3 sm:px-6 flex items-center justify-between gap-2 transition-opacity duration-300 ${
-              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-bold text-blue-400 bg-blue-600/20 px-2 py-0.5 rounded border border-blue-500/30">
-                {episodeCode}
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[180px] sm:max-w-md">
-                {episode.title}
-              </span>
-            </div>
+          {/* Top Bar inside Player in Fullscreen */}
+          {isFullscreen && (
+            <div className="absolute top-0 left-0 right-0 z-40 bg-gradient-to-b from-black/90 via-black/60 to-transparent pt-3 pb-6 px-3 sm:px-6 flex items-center justify-between gap-2 pointer-events-auto">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-bold text-blue-400 bg-blue-600/20 px-2 py-0.5 rounded border border-blue-500/30">
+                  {episodeCode}
+                </span>
+                <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[180px] sm:max-w-md">
+                  {series.title} • {episode.title}
+                </span>
+              </div>
 
-            <div className="flex items-center gap-2">
-              {/* Alternador de Modo (Google Drive vs Player Direto) */}
-              {episode.sourceType === 'google_drive' && (
-                <button
-                  onClick={() =>
-                    setActivePlayerMode(activePlayerMode === 'drive_iframe' ? 'native_player' : 'drive_iframe')
-                  }
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/15 text-white text-xs font-semibold transition-colors min-h-[36px]"
-                  title="Alternar entre Player Oficial Google Drive e Player Direto"
-                  id="player-toggle-mode-btn"
-                >
-                  <Tv className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">
-                    {activePlayerMode === 'drive_iframe' ? 'Usar Player Direto' : 'Usar Google Drive'}
-                  </span>
-                </button>
-              )}
-
-              {/* Botão Superior de Fullscreen */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                }}
-                className="px-3 py-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-blue-600/30 border border-blue-400/40 min-h-[38px] cursor-pointer"
-                title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia (F)'}
-                id="player-top-fullscreen-btn"
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                <span className="hidden xs:inline">{isFullscreen ? 'Sair' : 'Tela Cheia'}</span>
-                <span className="text-xs">⛶</span>
-              </button>
-
-              {/* Botão Fechar se estiver em Fullscreen */}
-              {isFullscreen && (
+              <div className="flex items-center gap-2">
                 <button
                   onClick={toggleFullscreen}
+                  className="px-3 py-1.5 rounded-xl bg-blue-600/90 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-blue-600/30 border border-blue-400/40 min-h-[38px] cursor-pointer"
+                  title="Sair da tela cheia (F ou Esc)"
+                  id="player-fullscreen-exit-btn"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                  <span className="hidden xs:inline">Sair Tela Cheia</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (isFullscreen) toggleFullscreen();
+                    onClose();
+                  }}
                   className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white min-h-[38px] min-w-[38px] flex items-center justify-center cursor-pointer"
-                  title="Fechar tela cheia"
+                  title="Fechar reprodutor"
                 >
                   <X className="w-5 h-5" />
                 </button>
-              )}
-            </div>
-          </div>
-
-          {/* Área Principal de Exibição do Vídeo */}
-          <div
-            onClick={handlePlayerTap}
-            className="relative w-full h-full flex items-center justify-center bg-black cursor-pointer"
-          >
-            {/* MODO 1: Google Drive Iframe */}
-            {activePlayerMode === 'drive_iframe' && driveEmbedUrl ? (
-              <div className="relative w-full h-full flex flex-col items-center justify-center">
-                <iframe
-                  src={driveEmbedUrl}
-                  title={episode.title}
-                  className="w-full h-full border-0"
-                  allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                  allowFullScreen
-                />
               </div>
+            </div>
+          )}
+
+          {/* Player Oficial Google Drive */}
+          <div className="relative w-full h-full flex flex-col items-center justify-center bg-black">
+            {driveEmbedUrl ? (
+              <iframe
+                key={episode.id}
+                src={driveEmbedUrl}
+                title={`${series.title} - ${episodeCode} - ${episode.title}`}
+                className="w-full h-full border-0"
+                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                allowFullScreen
+              />
             ) : (
-              /* MODO 2: HTML5 Video Nativo */
-              <div className="relative w-full h-full flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  src={episodeMediaUrl}
-                  poster={episode.thumbnailUrl || series.posterUrl}
-                  className="max-w-full max-h-full w-full h-full object-contain"
-                  autoPlay
-                  playsInline
-                  webkit-playsinline="true"
-                  x5-playsinline="true"
-                  onTimeUpdate={() => {
-                    if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
-                  }}
-                  onLoadedMetadata={() => {
-                    if (videoRef.current) setDuration(videoRef.current.duration);
-                  }}
-                  onEnded={() => {
-                    setIsPlaying(false);
-                    clearControlsTimer();
-                    setShowControls(true);
-                    onToggleWatched(episode.id);
-                    if (nextEpisode) {
-                      onSelectEpisode(nextEpisode);
-                    }
-                  }}
-                  onPlay={() => {
-                    setIsPlaying(true);
-                    scheduleControlsHide(3000);
-                    if (isIosDevice() && videoRef.current && typeof (videoRef.current as any).webkitEnterFullscreen === 'function') {
-                      try {
-                        (videoRef.current as any).webkitEnterFullscreen();
-                      } catch {}
-                    }
-                  }}
-                  onPause={() => {
-                    setIsPlaying(false);
-                    clearControlsTimer();
-                    setShowControls(true);
-                  }}
-                />
-
-                {/* Controles Centrais Play/Pause/Skip */}
-                <div
-                  className={`absolute inset-0 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-300 pointer-events-none ${
-                    showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
-                  }`}
-                >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      skip(-10);
-                    }}
-                    className="pointer-events-auto p-3 rounded-full bg-black/60 hover:bg-black/80 active:scale-95 text-white/90 border border-white/15 backdrop-blur-md transition-all shadow-xl min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    title="Voltar 10 segundos"
-                  >
-                    <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePlay();
-                    }}
-                    className="pointer-events-auto w-14 h-14 sm:w-18 sm:h-18 rounded-full bg-blue-600/95 hover:bg-blue-500 active:scale-95 text-white flex items-center justify-center shadow-2xl backdrop-blur-sm transition-all"
-                    title={isPlaying ? 'Pausar' : 'Reproduzir'}
-                    id="center-play-pause-btn"
-                  >
-                    {isPlaying ? (
-                      <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
-                    ) : (
-                      <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current translate-x-0.5" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      skip(10);
-                    }}
-                    className="pointer-events-auto p-3 rounded-full bg-black/60 hover:bg-black/80 active:scale-95 text-white/90 border border-white/15 backdrop-blur-md transition-all shadow-xl min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    title="Avançar 10 segundos"
-                  >
-                    <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-                </div>
+              <div className="text-center p-8 text-white/70 flex flex-col items-center gap-3">
+                <HardDrive className="w-12 h-12 text-blue-400" />
+                <p className="text-sm sm:text-base font-semibold">Vídeo do Google Drive não configurado</p>
+                <p className="text-xs text-white/40">Vincule um link ou ID válido do Google Drive ao episódio.</p>
               </div>
             )}
-          </div>
-
-          {/* Barra de Controles Inferior do Player */}
-          <div
-            className={`absolute bottom-0 left-0 right-0 z-40 bg-gradient-to-t from-black/95 via-black/75 to-transparent pt-4 pb-3 px-3 sm:px-6 transition-opacity duration-300 ${
-              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-          >
-            {/* Scrubber / Linha do Tempo */}
-            {activePlayerMode === 'native_player' && (
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[11px] font-mono text-white/70 min-w-[36px] text-right">
-                  {formatTime(currentTime)}
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  value={currentTime}
-                  onChange={handleSeek}
-                  onMouseDown={handleSliderDragStart}
-                  onMouseUp={handleSliderDragEnd}
-                  onTouchStart={handleSliderDragStart}
-                  onTouchEnd={handleSliderDragEnd}
-                  className="player-scrubber flex-1 cursor-pointer"
-                  id="player-timeline-slider"
-                />
-                <span className="text-[11px] font-mono text-white/40 min-w-[36px]">
-                  {formatTime(duration || episode.durationMinutes * 60)}
-                </span>
-              </div>
-            )}
-
-            {/* Linha de Ações Inferiores */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {activePlayerMode === 'native_player' && (
-                  <>
-                    <button
-                      onClick={togglePlay}
-                      className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer shadow-md shadow-blue-600/20"
-                      title={isPlaying ? 'Pausar' : 'Reproduzir'}
-                    >
-                      {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current translate-x-0.5" />}
-                    </button>
-
-                    <div className="hidden sm:flex items-center gap-1.5 ml-1">
-                      <button
-                        onClick={toggleMute}
-                        className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
-                        title={isMuted ? 'Ativar som' : 'Silenciar'}
-                      >
-                        {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-                      </button>
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={isMuted ? 0 : volume}
-                        onChange={handleVolumeChange}
-                        className="w-16 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* Marcar Assistido no Player */}
-                <button
-                  onClick={() => onToggleWatched(episode.id)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all min-h-[40px] cursor-pointer ${
-                    isWatched
-                      ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                      : 'bg-white/10 hover:bg-white/20 border border-white/10 text-white/80'
-                  }`}
-                  title={isWatched ? 'Episódio assistido' : 'Marcar como assistido'}
-                  id="player-mark-watched-btn"
-                >
-                  <Check className={`w-3.5 h-3.5 ${isWatched ? 'text-emerald-400 stroke-[3]' : 'text-white/40'}`} />
-                  <span className="hidden xs:inline">{isWatched ? 'Assistido' : 'Marcar Assistido'}</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {/* Velocidade */}
-                {activePlayerMode === 'native_player' && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                      className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-bold min-h-[40px] cursor-pointer"
-                      title="Velocidade"
-                    >
-                      {playbackRate}x
-                    </button>
-                    {showSpeedMenu && (
-                      <div className="absolute bottom-full right-0 mb-2 py-1 bg-[#171719] border border-white/10 rounded-xl shadow-2xl z-50 flex flex-col min-w-[70px]">
-                        {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
-                          <button
-                            key={rate}
-                            onClick={() => changeSpeed(rate)}
-                            className={`px-3 py-1.5 text-xs text-left hover:bg-white/10 ${
-                              playbackRate === rate ? 'text-blue-400 font-bold bg-white/5' : 'text-white/70'
-                            }`}
-                          >
-                            {rate}x
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Download */}
-                <button
-                  onClick={handleDownload}
-                  className="inline-flex items-center gap-1 p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white text-black hover:bg-blue-400 text-xs font-bold shadow-md transition-all active:scale-95 min-h-[40px] cursor-pointer"
-                  title="Baixar vídeo original"
-                  id="player-download-btn"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Baixar</span>
-                </button>
-
-                {/* Botão de Tela Cheia no rodapé dos controles */}
-                <button
-                  onClick={toggleFullscreen}
-                  className="p-2 sm:px-3 sm:py-2 rounded-xl bg-blue-600/90 hover:bg-blue-500 active:scale-95 text-white transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center gap-1 font-bold text-xs cursor-pointer shadow-md shadow-blue-600/20"
-                  title={isFullscreen ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
-                  id="player-fullscreen-btn"
-                >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{isFullscreen ? 'Sair' : 'Tela Cheia'}</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>

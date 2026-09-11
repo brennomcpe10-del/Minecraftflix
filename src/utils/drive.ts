@@ -41,6 +41,33 @@ export function getGoogleDriveDownloadUrl(id: string): string {
 }
 
 /**
+ * Obtém a URL do Player Oficial do Google Drive (/preview) para o episódio.
+ * Identifica e extrai o ID do Drive a partir de googleDriveId, videoUrl ou downloadUrl.
+ */
+export function getEpisodeDrivePreviewUrl(episode?: {
+  sourceType?: string;
+  googleDriveId?: string;
+  videoUrl?: string;
+  downloadUrl?: string;
+} | null): string {
+  if (!episode) return '';
+  if (episode.googleDriveId) {
+    return getGoogleDrivePreviewUrl(episode.googleDriveId);
+  }
+  const extracted =
+    extractGoogleDriveId(episode.videoUrl || '') ||
+    extractGoogleDriveId(episode.downloadUrl || '');
+  if (extracted) {
+    return getGoogleDrivePreviewUrl(extracted);
+  }
+  if (episode.videoUrl && episode.videoUrl.includes('drive.google.com')) {
+    if (episode.videoUrl.includes('/preview')) return episode.videoUrl;
+    if (episode.videoUrl.includes('/view')) return episode.videoUrl.replace(/\/view.*$/, '/preview');
+  }
+  return episode.videoUrl || '';
+}
+
+/**
  * Obtém exatamente a mesma fonte/URL utilizada tanto para download quanto para reprodução do episódio.
  * Garante paridade absoluta entre a ação do botão Download e a ação do botão Assistir.
  */
