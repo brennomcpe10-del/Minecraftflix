@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, ListVideo, Sparkles, HardDrive, ShieldAlert } from 'lucide-react';
 import { Series, Episode } from '../types';
+import { getEpisodeSourceUrl } from '../utils/drive';
 
 interface HeroBannerProps {
   series: Series;
@@ -16,6 +17,31 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   const episodes = series.episodes || [];
   const genres = series.genres || [];
   const firstEpisode = episodes[0];
+
+  const handleHeroPlay = () => {
+    if (!firstEpisode) return;
+    try {
+      const docEl = document.documentElement as any;
+      if (!document.fullscreenElement && !docEl.webkitFullscreenElement) {
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Tentativa de fullscreen no clique hero:', err);
+    }
+    const mediaUrl = getEpisodeSourceUrl(firstEpisode);
+    onPlayEpisode(series, {
+      ...firstEpisode,
+      videoUrl: mediaUrl || firstEpisode.videoUrl,
+    });
+  };
 
   return (
     <div className="relative w-full rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 bg-gradient-to-r from-blue-950/40 via-[#0A0A0B] to-transparent shadow-2xl mb-6 sm:mb-10 group">
@@ -94,7 +120,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           {firstEpisode && (
             <button
-              onClick={() => onPlayEpisode(series, firstEpisode)}
+              onClick={handleHeroPlay}
               className="flex items-center justify-center gap-2 px-5 sm:px-6 py-3 rounded-xl sm:rounded-full bg-white text-black hover:bg-blue-400 font-bold text-xs sm:text-base shadow-lg transition-all active:scale-95 min-h-[44px]"
               id="hero-play-first-btn"
             >

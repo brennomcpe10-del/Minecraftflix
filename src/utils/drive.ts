@@ -40,6 +40,23 @@ export function getGoogleDriveDownloadUrl(id: string): string {
   return `https://drive.google.com/uc?export=download&id=${id}`;
 }
 
+/**
+ * Obtém exatamente a mesma fonte/URL utilizada tanto para download quanto para reprodução do episódio.
+ * Garante paridade absoluta entre a ação do botão Download e a ação do botão Assistir.
+ */
+export function getEpisodeSourceUrl(episode?: {
+  sourceType?: string;
+  googleDriveId?: string;
+  downloadUrl?: string;
+  videoUrl?: string;
+} | null): string {
+  if (!episode) return '';
+  if (episode.sourceType === 'google_drive' && episode.googleDriveId) {
+    return getGoogleDriveDownloadUrl(episode.googleDriveId);
+  }
+  return episode.downloadUrl || episode.videoUrl || '';
+}
+
 export function getGoogleDriveThumbnailUrl(id: string): string {
   // O Google Drive disponibiliza thumbnails automáticas de arquivos através deste endpoint
   return `https://drive.google.com/thumbnail?id=${id}&sz=w1280`;

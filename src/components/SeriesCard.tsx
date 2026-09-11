@@ -1,6 +1,7 @@
 import React from 'react';
 import { Play, ListVideo, Layers, Edit, Trash2 } from 'lucide-react';
 import { Series, Episode } from '../types';
+import { getEpisodeSourceUrl } from '../utils/drive';
 
 interface SeriesCardProps {
   series: Series;
@@ -33,9 +34,28 @@ export const SeriesCard: React.FC<SeriesCardProps> = ({
       onOpenDetails(series);
       return;
     }
-    // Procurar primeiro episódio
+    try {
+      const docEl = document.documentElement as any;
+      if (!document.fullscreenElement && !docEl.webkitFullscreenElement) {
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Tentativa de fullscreen no clique series card:', err);
+    }
     const epToPlay = episodes[0];
-    onPlayEpisode(series, epToPlay);
+    const mediaUrl = getEpisodeSourceUrl(epToPlay);
+    onPlayEpisode(series, {
+      ...epToPlay,
+      videoUrl: mediaUrl || epToPlay.videoUrl,
+    });
   };
 
   return (

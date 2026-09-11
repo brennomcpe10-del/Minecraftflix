@@ -1,7 +1,7 @@
 import React from 'react';
 import { Play, Download, Check, Clock, HardDrive, Globe, UploadCloud, Edit, Trash2 } from 'lucide-react';
 import { Episode, Series } from '../types';
-import { formatEpisodeCode, getGoogleDriveDownloadUrl } from '../utils/drive';
+import { formatEpisodeCode, getGoogleDriveDownloadUrl, getEpisodeSourceUrl } from '../utils/drive';
 
 interface EpisodeCardProps {
   episode: Episode;
@@ -26,13 +26,8 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
 }) => {
   const code = formatEpisodeCode(episode.seasonNumber, episode.episodeNumber);
 
-  // Determinar link de download
-  const getDownloadHref = () => {
-    if (episode.sourceType === 'google_drive' && episode.googleDriveId) {
-      return getGoogleDriveDownloadUrl(episode.googleDriveId);
-    }
-    return episode.downloadUrl || episode.videoUrl;
-  };
+  // Determinar link de download / fonte direta do episódio
+  const getDownloadHref = () => getEpisodeSourceUrl(episode);
 
   const handleDownloadClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -49,6 +44,38 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
     document.body.removeChild(a);
   };
 
+  // O botão "ASSISTIR" reutiliza EXATAMENTE a mesma lógica e fonte do botão Download
+  const handleAssistirClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // 1 & 2. Identificar e obter exatamente a mesma fonte/URL utilizada pelo Download
+    const mediaUrl = getDownloadHref();
+    const episodeWithResolvedSource: Episode = {
+      ...episode,
+      videoUrl: mediaUrl || episode.videoUrl,
+    };
+
+    // 3. Aproveitar a interação direta de clique para solicitar fullscreen antes que o contexto seja perdido
+    try {
+      const docEl = document.documentElement as any;
+      if (!document.fullscreenElement && !docEl.webkitFullscreenElement) {
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Tentativa de fullscreen nativo no clique:', err);
+    }
+
+    // 4 & 5. Abrir o player imediatamente com o episódio e iniciar reprodução
+    onPlay(series, episodeWithResolvedSource);
+  };
+
   return (
     <div
       className={`group relative rounded-xl bg-[#171719] border transition-all duration-300 overflow-hidden flex flex-col justify-between ${
@@ -60,7 +87,7 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
     >
       {/* Thumbnail Area */}
       <div
-        onClick={() => onPlay(series, episode)}
+        onClick={handleAssistirClick}
         className="relative aspect-video w-full overflow-hidden bg-[#121214] cursor-pointer"
       >
         <img
@@ -180,7 +207,7 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             </button>
 
             <button
-              onClick={() => onPlay(series, episode)}
+              onClick={handleAssistirClick}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm transition-all active:scale-95 min-h-[36px]"
               id={`play-ep-${episode.id}`}
             >

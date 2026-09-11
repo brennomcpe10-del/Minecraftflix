@@ -25,7 +25,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { Episode, Series } from '../types';
-import { formatEpisodeCode, getGoogleDriveDownloadUrl, getGoogleDrivePreviewUrl } from '../utils/drive';
+import { formatEpisodeCode, getGoogleDriveDownloadUrl, getGoogleDrivePreviewUrl, getEpisodeSourceUrl } from '../utils/drive';
 import { api } from '../services/api';
 import { EpisodeCard } from './EpisodeCard';
 
@@ -74,12 +74,18 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      const doc = document as any;
+      if (doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement) {
+        return true;
+      }
+    }
+    return true; // O player abre diretamente em tela cheia por padrão
+  });
   const [showControls, setShowControls] = useState(true);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-  const [activePlayerMode, setActivePlayerMode] = useState<'drive_iframe' | 'native_player'>(
-    episode.sourceType === 'google_drive' ? 'drive_iframe' : 'native_player'
-  );
+  const [activePlayerMode, setActivePlayerMode] = useState<'drive_iframe' | 'native_player'>('native_player');
 
   // Filtros de Episódios na lista inferior
   const [selectedSeason, setSelectedSeason] = useState<number | 'all'>('all');
@@ -161,14 +167,22 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   // Outras séries recomendadas do catálogo (excluindo a série atual)
   const otherSeries = allSeries.filter((s) => s.id !== series.id);
 
-  // Atualizar modo de player quando mudar de episódio
+  // Manter player nativo ativo com a mesma fonte do download ao trocar de episódio
   useEffect(() => {
-    if (episode.sourceType === 'google_drive') {
-      setActivePlayerMode('drive_iframe');
-    } else {
-      setActivePlayerMode('native_player');
+    setActivePlayerMode('native_player');
+    
+    // Assegurar tela cheia caso o navegador suporte
+    const doc = document as any;
+    const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+    if (!isFs && playerContainerRef.current) {
+      const el = playerContainerRef.current as any;
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => {});
+      } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+      }
     }
-  }, [episode.id, episode.sourceType]);
+  }, [episode.id]);
 
   // Carregar progresso salvo e iniciar reprodução imediata do episódio
   useEffect(() => {
@@ -542,13 +556,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Link de download original
-  const getDownloadUrl = () => {
-    if (episode.sourceType === 'google_drive' && episode.googleDriveId) {
-      return getGoogleDriveDownloadUrl(episode.googleDriveId);
-    }
-    return episode.downloadUrl || episode.videoUrl;
-  };
+  // Fonte oficial do episódio compartilhada entre o Player e o Download
+  const episodeMediaUrl = getEpisodeSourceUrl(episode) || episode.videoUrl;
+  const getDownloadUrl = () => getEpisodeSourceUrl(episode);
 
   const handleDownload = () => {
     const url = getDownloadUrl();
@@ -719,7 +729,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="relative w-full h-full flex items-center justify-center">
                 <video
                   ref={videoRef}
-                  src={episode.videoUrl}
+                  src={episodeMediaUrl}
                   poster={episode.thumbnailUrl || series.posterUrl}
                   className="max-w-full max-h-full w-full h-full object-contain"
                   autoPlay
@@ -744,6 +754,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   onPlay={() => {
                     setIsPlaying(true);
                     scheduleControlsHide(3000);
+                    if (isIosDevice() && videoRef.current && typeof (videoRef.current as any).webkitEnterFullscreen === 'function') {
+                      try {
+                        (videoRef.current as any).webkitEnterFullscreen();
+                      } catch {}
+                    }
                   }}
                   onPause={() => {
                     setIsPlaying(false);
@@ -799,33 +814,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               </div>
             )}
           </div>
-
-          {/* ========================================================================= */}
-          {/* BOTÃO GRANDE DE FULLSCREEN ⛶ DIRETAMENTE NA ÁREA DO PLAYER */}
-          {/* ========================================================================= */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleFullscreen();
-            }}
-            className={`absolute bottom-16 sm:bottom-18 right-3 sm:right-6 z-30 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl bg-black/85 hover:bg-black active:scale-95 text-white font-black text-xs sm:text-sm flex items-center gap-2 border-2 border-white/30 shadow-2xl backdrop-blur-md cursor-pointer transition-all duration-300 min-h-[48px] min-w-[48px] ${
-              showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-            title="Tocar para colocar em Tela Cheia ⛶"
-            id="player-big-fullscreen-btn"
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize2 className="w-5 h-5 text-amber-400" />
-                <span className="font-bold tracking-wide">Sair da Tela Cheia</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="w-5 h-5 text-blue-400" />
-                <span className="font-bold tracking-wide">Tela Cheia ⛶</span>
-              </>
-            )}
-          </button>
 
           {/* Barra de Controles Inferior do Player */}
           <div

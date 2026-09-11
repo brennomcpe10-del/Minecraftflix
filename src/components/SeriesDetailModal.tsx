@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Series, Episode } from '../types';
 import { EpisodeCard } from './EpisodeCard';
+import { getEpisodeSourceUrl } from '../utils/drive';
 
 interface SeriesDetailModalProps {
   series: Series;
@@ -92,12 +93,29 @@ export const SeriesDetailModal: React.FC<SeriesDetailModalProps> = ({
 
   const handlePlayFirstUnwatched = () => {
     const eps = series.episodes || [];
-    const unwatched = eps.find((e) => !isEpisodeWatched(e.id));
-    if (unwatched) {
-      onPlayEpisode(series, unwatched);
-    } else if (eps.length > 0) {
-      onPlayEpisode(series, eps[0]);
+    const targetEp = eps.find((e) => !isEpisodeWatched(e.id)) || eps[0];
+    if (!targetEp) return;
+    try {
+      const docEl = document.documentElement as any;
+      if (!document.fullscreenElement && !docEl.webkitFullscreenElement) {
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Tentativa de fullscreen nativo no clique:', err);
     }
+    const mediaUrl = getEpisodeSourceUrl(targetEp);
+    onPlayEpisode(series, {
+      ...targetEp,
+      videoUrl: mediaUrl || targetEp.videoUrl,
+    });
   };
 
   return (

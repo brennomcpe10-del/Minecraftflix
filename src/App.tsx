@@ -32,6 +32,7 @@ import { AddEpisodeModal } from './components/AddEpisodeModal';
 import { SeriesFormModal } from './components/SeriesFormModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AboutModal } from './components/AboutModal';
+import { getEpisodeSourceUrl } from './utils/drive';
 
 export default function App() {
   const [seriesList, setSeriesList] = useState<Series[]>([]);
@@ -213,11 +214,16 @@ export default function App() {
     });
   }, [seriesList, selectedGenre, searchQuery]);
 
-  // Reproduzir episódio
+  // Reproduzir episódio garantindo a mesma fonte de download
   const handlePlayEpisode = (series: Series, episode: Episode) => {
+    const mediaUrl = getEpisodeSourceUrl(episode);
+    const resolvedEpisode: Episode = {
+      ...episode,
+      videoUrl: mediaUrl || episode.videoUrl,
+    };
     setSelectedSeriesForDetail(null);
     setActivePlayingSeries(series);
-    setActivePlayingEpisode(episode);
+    setActivePlayingEpisode(resolvedEpisode);
   };
 
   // Abrir detalhes da série
